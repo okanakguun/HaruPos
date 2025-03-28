@@ -51,17 +51,20 @@
             display: block;
         }
         .masa-container {
-            display: grid; /* Flex yerine grid */
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); /* Sabit sütunlar */
-            gap: 15px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); /* 140px -> 160px, auto-fill -> auto-fit */
+            gap: 20px; /* Boşluk artırıldı: 15px -> 20px */
+            justify-items: center; /* Masaları ortala */
         }
         .masa {
-            width: 140px;
+            width: 100%; /* Sabit 140px yerine %100, grid hücresine sığsın */
+            max-width: 140px; /* Maksimum genişlik 140px */
             padding: 15px;
             border-radius: 8px;
             text-align: center;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             transition: transform 0.2s;
+            box-sizing: border-box; /* Padding’i genişliğe dahil et */
         }
         .masa:hover {
             transform: scale(1.05);
