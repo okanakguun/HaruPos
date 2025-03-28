@@ -30,7 +30,7 @@ def index():
 def masalar():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('SELECT masa_id, masa_adi, durum FROM masalar')
+    cur.execute('SELECT masa_id, masa_adi, durum FROM masalar ORDER BY masa_id')  # ORDER BY eklendi
     masalar = cur.fetchall()
     cur.close()
     conn.close()

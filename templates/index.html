@@ -51,8 +51,8 @@
             display: block;
         }
         .masa-container {
-            display: flex;
-            flex-wrap: wrap;
+            display: grid; /* Flex yerine grid */
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); /* Sabit sütunlar */
             gap: 15px;
         }
         .masa {
