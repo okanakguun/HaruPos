@@ -4,10 +4,15 @@ import os
 
 app = Flask(__name__)
 
-# Postgres bağlantısı
 def get_db_connection():
-    conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
-    return conn
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        raise ValueError("DATABASE_URL çevresel değişkeni tanımlı değil!")
+    try:
+        conn = psycopg2.connect(db_url)
+        return conn
+    except psycopg2.Error as e:
+        raise Exception(f"Veritabanı bağlantı hatası: {str(e)}")
 
 # Sabit lisans anahtarı
 LICENSE_KEY = "KAFE123"
@@ -79,7 +84,7 @@ def odeme_kapat(masa_id):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT SUM(s.adet * u.fiyat) FROM siparisler s JOIN urunler u ON s.urun_id = u.urun_id WHERE s.masa_id = %s', (masa_id,))
-    toplam = cur.fetchone()[0]
+    toplam = cur.fetchone()[0] or 0
     cur.execute('INSERT INTO odemeler (masa_id, tutar) VALUES (%s, %s)', (masa_id, toplam))
     cur.execute('DELETE FROM siparisler WHERE masa_id = %s', (masa_id,))
     cur.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ("bos", masa_id))
@@ -115,6 +120,34 @@ def urun_ekle():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('INSERT INTO urunler (urun_adi, fiyat) VALUES (%s, %s)', (data['urun_adi'], data['fiyat']))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/masa_sil/<int:masa_id>', methods=['POST'])
+def masa_sil(masa_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # İlgili siparişleri sil
+    cur.execute('DELETE FROM siparisler WHERE masa_id = %s', (masa_id,))
+    # İlgili ödemeleri sil (isteğe bağlı, eğer istemiyorsan bu satırı kaldır)
+    cur.execute('DELETE FROM odemeler WHERE masa_id = %s', (masa_id,))
+    # Masayı sil
+    cur.execute('DELETE FROM masalar WHERE masa_id = %s', (masa_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/urun_sil/<int:urun_id>', methods=['POST'])
+def urun_sil(urun_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # İlgili siparişleri sil
+    cur.execute('DELETE FROM siparisler WHERE urun_id = %s', (urun_id,))
+    # Ürünü sil
+    cur.execute('DELETE FROM urunler WHERE urun_id = %s', (urun_id,))
     conn.commit()
     cur.close()
     conn.close()

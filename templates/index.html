@@ -34,14 +34,14 @@
             border: none;
             cursor: pointer;
             transition: background-color 0.3s;
-            color: #333; /* Active olmayanlar için koyu renk */
+            color: #333;
         }
         .tab-button:hover {
             background-color: #e0e0e0;
         }
         .tab-button.active {
             background-color: #007bff;
-            color: white; /* Active olanlar için beyaz */
+            color: white;
         }
         .tab-content {
             padding: 20px;
@@ -105,6 +105,12 @@
         }
         .favori-button:hover {
             background-color: #218838;
+        }
+        .sil-button {
+            background-color: #dc3545;
+        }
+        .sil-button:hover {
+            background-color: #c82333;
         }
         select, input[type="number"], input[type="text"] {
             padding: 8px;
@@ -190,14 +196,17 @@
             <p id="siparisMesaji" class="success-message">Sipariş başarıyla kaydedildi!</p>
         </div>
         <div id="masaEkleTab" class="tab-content">
-            <h2>Yeni Masa Ekle</h2>
+            <h2>Masa Yönetimi</h2>
             <input type="text" id="yeniMasaAdi" placeholder="Masa Adı (ör: Masa 4)" style="width: 150px;">
             <button onclick="yeniMasaEkle()">Ekle</button>
+            <table id="masaTablosu">
+                <tr><th>Masa Adı</th><th>Durum</th><th>İşlem</th></tr>
+            </table>
         </div>
         <div id="urunEkleTab" class="tab-content">
             <h2>Ürün Yönetimi</h2>
             <table id="urunTablosu">
-                <tr><th>Ürün Adı</th><th>Fiyat (TL)</th></tr>
+                <tr><th>Ürün Adı</th><th>Fiyat (TL)</th><th>İşlem</th></tr>
             </table>
             <div class="urun-satiri">
                 <input type="text" id="yeniUrunAdi" placeholder="Ürün Adı (ör: Kahve)" style="width: 150px;">
@@ -237,6 +246,7 @@
             }
             if (tabId === 'masalarTab') masalariYukle();
             if (tabId === 'urunEkleTab') urunleriTabloyaYukle();
+            if (tabId === 'masaEkleTab') masalariTabloyaYukle();
             if (tabId === 'siparisEkleTab') {
                 urunleriYukle();
                 document.getElementById("siparisMesaji").style.display = "none";
@@ -267,6 +277,28 @@
             } catch (error) {
                 console.error(error);
                 document.getElementById("masalar").innerHTML = "<p>Masalar yüklenirken bir hata oluştu.</p>";
+            }
+        }
+
+        async function masalariTabloyaYukle() {
+            try {
+                const response = await fetch('/masalar');
+                if (!response.ok) throw new Error("Masalar yüklenemedi: " + response.status);
+                const masalar = await response.json();
+                const masaTablosu = document.getElementById("masaTablosu");
+                masaTablosu.innerHTML = "<tr><th>Masa Adı</th><th>Durum</th><th>İşlem</th></tr>";
+                masalar.forEach(m => {
+                    masaTablosu.innerHTML += `
+                        <tr>
+                            <td>${m[1]}</td>
+                            <td>${m[2]}</td>
+                            <td><button class="sil-button" onclick="masaSil(${m[0]})">Sil</button></td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error(error);
+                document.getElementById("masaTablosu").innerHTML = "<tr><td colspan='3'>Masalar yüklenemedi.</td></tr>";
             }
         }
 
@@ -314,13 +346,19 @@
                 if (!response.ok) throw new Error("Ürünler yüklenemedi: " + response.status);
                 const urunler = await response.json();
                 const urunTablosu = document.getElementById("urunTablosu");
-                urunTablosu.innerHTML = "<tr><th>Ürün Adı</th><th>Fiyat (TL)</th></tr>";
+                urunTablosu.innerHTML = "<tr><th>Ürün Adı</th><th>Fiyat (TL)</th><th>İşlem</th></tr>";
                 urunler.forEach(u => {
-                    urunTablosu.innerHTML += `<tr><td>${u[1]}</td><td>${u[2]}</td></tr>`;
+                    urunTablosu.innerHTML += `
+                        <tr>
+                            <td>${u[1]}</td>
+                            <td>${u[2]}</td>
+                            <td><button class="sil-button" onclick="urunSil(${u[0]})">Sil</button></td>
+                        </tr>
+                    `;
                 });
             } catch (error) {
                 console.error(error);
-                document.getElementById("urunTablosu").innerHTML = "<tr><td colspan='2'>Ürünler yüklenemedi.</td></tr>";
+                document.getElementById("urunTablosu").innerHTML = "<tr><td colspan='3'>Ürünler yüklenemedi.</td></tr>";
             }
         }
 
@@ -470,7 +508,8 @@
             });
             document.getElementById("yeniMasaAdi").value = "";
             masalariYukle();
-            openTab('masalarTab');
+            masalariTabloyaYukle();
+            openTab('masaEkleTab');
         }
 
         async function yeniUrunEkle() {
@@ -487,6 +526,38 @@
             urunleriYukle();
             urunleriTabloyaYukle();
             openTab('urunEkleTab');
+        }
+
+        async function masaSil(masa_id) {
+            if (confirm("Bu masayı silmek istediğinize emin misiniz?")) {
+                const response = await fetch(`/masa_sil/${masa_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    masalariYukle();
+                    masalariTabloyaYukle();
+                } else {
+                    alert("Masa silinirken bir hata oluştu!");
+                }
+            }
+        }
+
+        async function urunSil(urun_id) {
+            if (confirm("Bu ürünü silmek istediğinize emin misiniz?")) {
+                const response = await fetch(`/urun_sil/${urun_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    urunleriYukle();
+                    urunleriTabloyaYukle();
+                } else {
+                    alert("Ürün silinirken bir hata oluştu!");
+                }
+            }
         }
 
         async function siparisSil(siparis_id, masa_id) {
@@ -534,6 +605,7 @@
         masalariYukle();
         urunleriYukle();
         urunleriTabloyaYukle();
+        masalariTabloyaYukle();
     </script>
 </body>
 </html>
