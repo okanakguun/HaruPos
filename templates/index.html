@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Adisyon Sistemi</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .tab-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            background-color: #f2f2f2;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            color: #333; /* Active olmayanlar için koyu renk */
+        }
+        .tab-button:hover {
+            background-color: #e0e0e0;
+        }
+        .tab-button.active {
+            background-color: #007bff;
+            color: white; /* Active olanlar için beyaz */
+        }
+        .tab-content {
+            padding: 20px;
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .masa-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .masa {
+            width: 140px;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .masa:hover {
+            transform: scale(1.05);
+        }
+        .dolu {
+            background-color: #ffdddd;
+            border: 2px solid #ff5555;
+        }
+        .bos {
+            background-color: #ddffdd;
+            border: 2px solid #55cc55;
+        }
+        .masa i {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        button {
+            padding: 8px 12px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .adet-button {
+            padding: 5px 10px;
+            font-size: 14px;
+            margin: 0 2px;
+        }
+        .favori-button {
+            padding: 8px;
+            margin: 5px;
+            background-color: #28a745;
+            width: 100px;
+            text-align: center;
+        }
+        .favori-button:hover {
+            background-color: #218838;
+        }
+        select, input[type="number"], input[type="text"] {
+            padding: 8px;
+            margin: 5px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        input[type="number"] {
+            width: 50px;
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            background-color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+        .toplam {
+            font-weight: bold;
+            margin-top: 10px;
+            color: #333;
+        }
+        .urun-satiri {
+            margin: 10px 0;
+        }
+        #urunSecici {
+            width: 200px;
+        }
+        #favoriUrunler {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .success-message {
+            color: #28a745;
+            font-weight: bold;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Adisyon Sistemi</h1>
+    <div class="tab-container">
+        <div class="tabs">
+            <button class="tab-button active" onclick="openTab('masalarTab')">Masalar</button>
+            <button class="tab-button" onclick="openTab('siparisEkleTab')">Sipariş Ekle</button>
+            <button class="tab-button" onclick="openTab('masaEkleTab')">Masa Ekle</button>
+            <button class="tab-button" onclick="openTab('urunEkleTab')">Ürün Ekle</button>
+            <button class="tab-button" onclick="openTab('adisyonTab')">Adisyon</button>
+            <button class="tab-button" onclick="openTab('odemeGecmisiTab')">Ödeme Geçmişi</button>
+            <button class="tab-button" onclick="openTab('gelirRaporuTab')">Gelir Raporu</button>
+        </div>
+        <div id="masalarTab" class="tab-content active">
+            <h2>Masalar</h2>
+            <div id="masalar" class="masa-container"></div>
+        </div>
+        <div id="siparisEkleTab" class="tab-content">
+            <h2>Sipariş Ekle</h2>
+            <select id="masaSec">
+                <option value="">Masa Seç</option>
+            </select>
+            <div id="favoriUrunler"></div>
+            <input type="text" id="urunAra" placeholder="Ürün ara..." style="width: 200px;" oninput="urunleriFiltrele()">
+            <select id="urunSecici" onchange="urunEkleTabloya(this)">
+                <option value="">Ürün Seç</option>
+            </select>
+            <table id="siparisTablosu">
+                <tr><th>Ürün</th><th>Adet</th><th>İşlem</th></tr>
+            </table>
+            <button onclick="siparisEkle()">Siparişi Kaydet</button>
+            <p id="siparisMesaji" class="success-message">Sipariş başarıyla kaydedildi!</p>
+        </div>
+        <div id="masaEkleTab" class="tab-content">
+            <h2>Yeni Masa Ekle</h2>
+            <input type="text" id="yeniMasaAdi" placeholder="Masa Adı (ör: Masa 4)" style="width: 150px;">
+            <button onclick="yeniMasaEkle()">Ekle</button>
+        </div>
+        <div id="urunEkleTab" class="tab-content">
+            <h2>Ürün Yönetimi</h2>
+            <table id="urunTablosu">
+                <tr><th>Ürün Adı</th><th>Fiyat (TL)</th></tr>
+            </table>
+            <div class="urun-satiri">
+                <input type="text" id="yeniUrunAdi" placeholder="Ürün Adı (ör: Kahve)" style="width: 150px;">
+                <input type="number" id="yeniUrunFiyat" min="0" step="0.01" placeholder="Fiyat (ör: 20.00)" style="width: 100px;">
+                <button onclick="yeniUrunEkle()">Ekle</button>
+            </div>
+        </div>
+        <div id="adisyonTab" class="tab-content">
+            <h2>Adisyon Detayı</h2>
+            <div id="adisyon"></div>
+        </div>
+        <div id="odemeGecmisiTab" class="tab-content">
+            <h2>Ödeme Geçmişi</h2>
+            <button onclick="odemeleriGoster()">Geçmişi Göster</button>
+            <div id="odemeGecmisi"></div>
+        </div>
+        <div id="gelirRaporuTab" class="tab-content">
+            <h2>Gelir Raporu</h2>
+            <button onclick="gelirRaporuGoster()">Raporu Göster</button>
+            <div id="gelirRaporu"></div>
+        </div>
+    </div>
+
+    <script>
+        let tumUrunler = [];
+
+        function openTab(tabId, event) {
+            const tabs = document.getElementsByClassName("tab-content");
+            const buttons = document.getElementsByClassName("tab-button");
+            for (let i = 0; i < tabs.length; i++) {
+                tabs[i].classList.remove("active");
+                buttons[i].classList.remove("active");
+            }
+            document.getElementById(tabId).classList.add("active");
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add("active");
+            }
+            if (tabId === 'masalarTab') masalariYukle();
+            if (tabId === 'urunEkleTab') urunleriTabloyaYukle();
+            if (tabId === 'siparisEkleTab') {
+                urunleriYukle();
+                document.getElementById("siparisMesaji").style.display = "none";
+            }
+        }
+
+        async function masalariYukle() {
+            try {
+                const response = await fetch('/masalar');
+                if (!response.ok) throw new Error("Masalar yüklenemedi: " + response.status);
+                const masalar = await response.json();
+                const masaDiv = document.getElementById("masalar");
+                const masaSec = document.getElementById("masaSec");
+                masaDiv.innerHTML = "";
+                masaSec.innerHTML = "<option value=''>Masa Seç</option>";
+                masalar.forEach(m => {
+                    const div = document.createElement("div");
+                    div.className = `masa ${m[2]}`;
+                    div.innerHTML = `
+                        <i class="fas fa-chair ${m[2] === 'dolu' ? 'fa-red' : 'fa-green'}"></i><br>
+                        ${m[1]}<br>
+                        <button onclick="adisyonGoster(${m[0]})">Adisyon</button><br>
+                        <button onclick="odemeKapat(${m[0]})">Ödeme Kapat</button>
+                    `;
+                    masaDiv.appendChild(div);
+                    masaSec.innerHTML += `<option value="${m[0]}">${m[1]}</option>`;
+                });
+            } catch (error) {
+                console.error(error);
+                document.getElementById("masalar").innerHTML = "<p>Masalar yüklenirken bir hata oluştu.</p>";
+            }
+        }
+
+        async function urunleriYukle() {
+            try {
+                const response = await fetch('/urunler');
+                if (!response.ok) throw new Error("Ürünler yüklenemedi: " + response.status);
+                tumUrunler = await response.json();
+                const urunSecici = document.getElementById("urunSecici");
+                const favoriUrunler = document.getElementById("favoriUrunler");
+                urunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
+                favoriUrunler.innerHTML = "";
+                
+                tumUrunler.forEach(u => {
+                    urunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
+                });
+
+                const favoriler = tumUrunler.slice(0, 4);
+                favoriler.forEach(u => {
+                    const button = document.createElement("button");
+                    button.className = "favori-button";
+                    button.textContent = `${u[1]} (${u[2]} TL)`;
+                    button.onclick = () => urunEkleTabloyaButon(u[0], u[1]);
+                    favoriUrunler.appendChild(button);
+                });
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        function urunleriFiltrele() {
+            const arama = document.getElementById("urunAra").value.toLowerCase();
+            const urunSecici = document.getElementById("urunSecici");
+            urunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
+            tumUrunler
+                .filter(u => u[1].toLowerCase().includes(arama))
+                .forEach(u => {
+                    urunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
+                });
+        }
+
+        async function urunleriTabloyaYukle() {
+            try {
+                const response = await fetch('/urunler');
+                if (!response.ok) throw new Error("Ürünler yüklenemedi: " + response.status);
+                const urunler = await response.json();
+                const urunTablosu = document.getElementById("urunTablosu");
+                urunTablosu.innerHTML = "<tr><th>Ürün Adı</th><th>Fiyat (TL)</th></tr>";
+                urunler.forEach(u => {
+                    urunTablosu.innerHTML += `<tr><td>${u[1]}</td><td>${u[2]}</td></tr>`;
+                });
+            } catch (error) {
+                console.error(error);
+                document.getElementById("urunTablosu").innerHTML = "<tr><td colspan='2'>Ürünler yüklenemedi.</td></tr>";
+            }
+        }
+
+        function urunEkleTabloya(select) {
+            const urun_id = select.value;
+            if (!urun_id) return;
+            const urun_adi = select.options[select.selectedIndex].text.split(' (')[0];
+            urunEkleTabloyaButon(urun_id, urun_adi);
+            select.value = "";
+            document.getElementById("urunAra").value = "";
+            urunleriFiltrele();
+        }
+
+        function urunEkleTabloyaButon(urun_id, urun_adi) {
+            const siparisTablosu = document.getElementById("siparisTablosu");
+            const mevcutSatir = siparisTablosu.querySelector(`tr[data-urun-id="${urun_id}"]`);
+            if (mevcutSatir) {
+                const adetInput = mevcutSatir.querySelector(".adet");
+                adetInput.value = parseInt(adetInput.value) + 1;
+            } else {
+                const yeniSatir = document.createElement("tr");
+                yeniSatir.setAttribute("data-urun-id", urun_id);
+                yeniSatir.innerHTML = `
+                    <td>${urun_adi}</td>
+                    <td>
+                        <button class="adet-button" onclick="adetAzalt(this)">-</button>
+                        <input type="number" class="adet" min="1" value="1" readonly>
+                        <button class="adet-button" onclick="adetArtir(this)">+</button>
+                    </td>
+                    <td><button onclick="satirSil(this)">Sil</button></td>
+                `;
+                siparisTablosu.appendChild(yeniSatir);
+            }
+        }
+
+        function adetArtir(button) {
+            const input = button.parentElement.querySelector(".adet");
+            input.value = parseInt(input.value) + 1;
+        }
+
+        function adetAzalt(button) {
+            const input = button.parentElement.querySelector(".adet");
+            const yeniDeger = parseInt(input.value) - 1;
+            if (yeniDeger <= 0) {
+                satirSil(button);
+            } else {
+                input.value = yeniDeger;
+            }
+        }
+
+        function satirSil(button) {
+            button.parentElement.parentElement.remove();
+        }
+
+        async function siparisEkle() {
+            const masa_id = document.getElementById("masaSec").value;
+            if (!masa_id) return alert("Masa seçiniz!");
+            const siparisTablosu = document.getElementById("siparisTablosu");
+            const siparisSatirlari = siparisTablosu.querySelectorAll("tr[data-urun-id]");
+            const urunler = [];
+            siparisSatirlari.forEach(satir => {
+                const urun_id = satir.getAttribute("data-urun-id");
+                const adet = satir.querySelector(".adet").value;
+                if (urun_id && adet) {
+                    urunler.push({ urun_id, adet });
+                }
+            });
+            if (urunler.length === 0) return alert("En az bir ürün seçiniz!");
+
+            const response = await fetch('/siparis_ekle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ masa_id, urunler })
+            });
+
+            if (response.ok) {
+                masalariYukle();
+                adisyonGoster(masa_id);
+                siparisTablosu.innerHTML = "<tr><th>Ürün</th><th>Adet</th><th>İşlem</th></tr>";
+                const mesaj = document.getElementById("siparisMesaji");
+                mesaj.style.display = "block";
+                setTimeout(() => {
+                    mesaj.style.display = "none";
+                    openTab('adisyonTab');
+                }, 2000);
+            } else {
+                console.error("Sipariş kaydedilemedi: " + response.status);
+                alert("Sipariş kaydedilirken bir hata oluştu: " + response.status);
+            }
+        }
+
+        async function adisyonGoster(masa_id) {
+            try {
+                const response = await fetch(`/adisyon/${masa_id}`);
+                if (!response.ok) throw new Error("Adisyon yüklenemedi: " + response.status);
+                const data = await response.json();
+                console.log("Adisyon verisi:", data);
+                if (!data || !data.detay || !Array.isArray(data.detay) || typeof data.toplam === 'undefined') {
+                    throw new Error("Adisyon verisi beklenen formatta değil.");
+                }
+                const adisyonDiv = document.getElementById("adisyon");
+                let html = `<h3>${data.detay[0]?.[0] || 'Masa'} Adisyonu</h3>`;
+                html += `<table><tr><th>Ürün</th><th>Adet</th><th>Toplam</th><th>İşlem</th></tr>`;
+                data.detay.forEach(d => {
+                    const siparis_id = d[4];
+                    html += `<tr><td>${d[1]}</td><td>${d[2]}</td><td>${d[3]} TL</td><td>
+                        <button onclick="siparisDuzenle(${siparis_id}, ${masa_id})">Düzenle</button>
+                        <button onclick="siparisSil(${siparis_id}, ${masa_id})">Sil</button>
+                    </td></tr>`;
+                });
+                html += `</table><p class="toplam">Genel Toplam: ${data.toplam} TL</p>`;
+                adisyonDiv.innerHTML = html;
+                openTab('adisyonTab');
+            } catch (error) {
+                console.error("Adisyon hatası:", error.message);
+                document.getElementById("adisyon").innerHTML = `<p>Adisyon yüklenirken bir hata oluştu: ${error.message}</p>`;
+                openTab('adisyonTab');
+            }
+        }
+
+        async function odemeKapat(masa_id) {
+            await fetch(`/odeme_kapat/${masa_id}`, { method: 'POST' });
+            masalariYukle();
+            document.getElementById("adisyon").innerHTML = "";
+            openTab('masalarTab');
+        }
+
+        async function odemeleriGoster() {
+            const response = await fetch('/odemeler');
+            const odemeler = await response.json();
+            const gecmisDiv = document.getElementById("odemeGecmisi");
+            let html = `<table><tr><th>Masa</th><th>Tutar</th><th>Tarih</th></tr>`;
+            odemeler.forEach(o => {
+                html += `<tr><td>${o[0]}</td><td>${o[1]} TL</td><td>${new Date(o[2]).toLocaleString()}</td></tr>`;
+            });
+            html += `</table>`;
+            gecmisDiv.innerHTML = html;
+        }
+
+        async function yeniMasaEkle() {
+            const masa_adi = document.getElementById("yeniMasaAdi").value;
+            if (!masa_adi) return alert("Masa adı giriniz!");
+            await fetch('/masa_ekle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ masa_adi })
+            });
+            document.getElementById("yeniMasaAdi").value = "";
+            masalariYukle();
+            openTab('masalarTab');
+        }
+
+        async function yeniUrunEkle() {
+            const urun_adi = document.getElementById("yeniUrunAdi").value;
+            const fiyat = document.getElementById("yeniUrunFiyat").value;
+            if (!urun_adi || !fiyat) return alert("Ürün adı ve fiyat giriniz!");
+            await fetch('/urun_ekle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urun_adi, fiyat })
+            });
+            document.getElementById("yeniUrunAdi").value = "";
+            document.getElementById("yeniUrunFiyat").value = "";
+            urunleriYukle();
+            urunleriTabloyaYukle();
+            openTab('urunEkleTab');
+        }
+
+        async function siparisSil(siparis_id, masa_id) {
+            if (confirm("Bu siparişi silmek istediğinize emin misiniz?")) {
+                const response = await fetch(`/siparis_sil/${siparis_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    masalariYukle();
+                    adisyonGoster(result.masa_id);
+                } else {
+                    alert(result.message || "Sipariş silinirken bir hata oluştu!");
+                }
+            }
+        }
+
+        async function siparisDuzenle(siparis_id, masa_id) {
+            const yeniAdet = prompt("Yeni adeti giriniz:", "1");
+            if (yeniAdet && !isNaN(yeniAdet) && yeniAdet > 0) {
+                const response = await fetch(`/siparis_duzenle/${siparis_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ adet: yeniAdet })
+                });
+                const result = await response.json();
+                adisyonGoster(result.masa_id);
+            }
+        }
+
+        async function gelirRaporuGoster() {
+            const response = await fetch('/gelir_raporu');
+            const data = await response.json();
+            const raporDiv = document.getElementById("gelirRaporu");
+            let html = `<p class="toplam">Toplam Gelir: ${data.toplam_gelir} TL</p>`;
+            html += `<table><tr><th>Tarih</th><th>Günlük Toplam</th></tr>`;
+            data.gunluk_ozet.forEach(g => {
+                html += `<tr><td>${new Date(g[0]).toLocaleDateString()}</td><td>${g[1]} TL</td></tr>`;
+            });
+            html += `</table>`;
+            raporDiv.innerHTML = html;
+        }
+
+        masalariYukle();
+        urunleriYukle();
+        urunleriTabloyaYukle();
+    </script>
+</body>
+</html>
