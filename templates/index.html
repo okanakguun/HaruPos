@@ -682,7 +682,7 @@
                 }
                 const adisyonDiv = document.getElementById("adisyon");
                 let html = `<h3>${data.detay[0]?.[0] || 'Masa'} Adisyonu</h3>`;
-                html += `<table><tr><th>Seç</th><th>Ürün</th><th>Adet</th><th>Toplam</th><th>İşlem</th></tr>`;
+                html += `<table><tr><th>Seç</th><th>Ürün</th><th>Adet</th><th>Ödenecek Adet</th><th>Toplam</th><th>İşlem</th></tr>`;
                 data.detay.forEach(d => {
                     const siparis_id = d[4];
                     html += `
@@ -690,6 +690,7 @@
                             <td><input type="checkbox" class="siparis-sec" onchange="hesaplaSeciliToplam(${masa_id})"></td>
                             <td>${d[1]}</td>
                             <td>${d[2]}</td>
+                            <td><input type="number" class="odenecek-adet" min="0" max="${d[2]}" value="0" onchange="hesaplaSeciliToplam(${masa_id})"></td>
                             <td>${d[3]} TL</td>
                             <td>
                                 <button onclick="siparisDuzenle(${siparis_id}, ${masa_id})">Düzenle</button>
@@ -700,7 +701,7 @@
                 html += `</table><p class="toplam">Genel Toplam: ${data.toplam} TL</p>`;
                 adisyonDiv.innerHTML = html;
                 openTab('adisyonTab');
-                hesaplaSeciliToplam(masa_id); // İlk toplamı hesapla
+                hesaplaSeciliToplam(masa_id);
             } catch (error) {
                 console.error("Adisyon hatası:", error.message);
                 document.getElementById("adisyon").innerHTML = `<p>Adisyon yüklenirken bir hata oluştu: ${error.message}</p>`;
@@ -713,8 +714,9 @@
             let seciliToplam = 0;
             seciliCheckboxlar.forEach(checkbox => {
                 const satir = checkbox.closest("tr");
-                const toplam = parseFloat(satir.cells[3].textContent.replace(" TL", ""));
-                seciliToplam += toplam;
+                const odenenAdet = parseInt(satir.querySelector(".odenecek-adet").value) || 0;
+                const birimFiyat = parseFloat(satir.cells[4].textContent.replace(" TL", "")) / parseInt(satir.cells[2].textContent);
+                seciliToplam += odenenAdet * birimFiyat;
             });
             document.getElementById("seciliToplam").textContent = `Seçili Toplam: ${seciliToplam.toFixed(2)} TL`;
         }
@@ -722,15 +724,21 @@
         async function odemeKapatSecili() {
             const masa_id = document.querySelector("#adisyon h3").textContent.split(" ")[0].replace("Masa", "").trim();
             const seciliCheckboxlar = document.querySelectorAll(".siparis-sec:checked");
-            const siparis_ids = Array.from(seciliCheckboxlar).map(cb => cb.closest("tr").getAttribute("data-siparis-id"));
+            const odemeler = Array.from(seciliCheckboxlar).map(cb => {
+                const satir = cb.closest("tr");
+                return {
+                    siparis_id: satir.getAttribute("data-siparis-id"),
+                    adet: parseInt(satir.querySelector(".odenecek-adet").value) || 0
+                };
+            }).filter(o => o.adet > 0);
             const odeme_turu = document.getElementById("odemeTuru").value;
 
-            if (siparis_ids.length === 0) return alert("Lütfen ödeme için en az bir ürün seçiniz!");
+            if (odemeler.length === 0) return alert("Lütfen ödeme için en az bir ürün ve adet seçiniz!");
 
             const response = await fetch(`/odeme_kapat/${masa_id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ siparis_ids, odeme_turu })
+                body: JSON.stringify({ odemeler, odeme_turu })
             });
             const result = await response.json();
             if (result.status === "success") {
@@ -738,18 +746,27 @@
                 adisyonGoster(masa_id);
                 alert(`Seçili ödeme (${odeme_turu}) ${result.toplam} TL olarak kapatıldı.`);
             } else {
-                alert("Ödeme kapatılırken bir hata oluştu!");
+                alert(result.message || "Ödeme kapatılırken bir hata oluştu!");
             }
         }
 
         async function odemeKapatTam(masa_id) {
-            const odeme_turu = document.getElementById("odemeTuru")?.value || "nakit"; // Modal yoksa varsayılan nakit
-            const response = await fetch(`/odeme_kapat/${masa_id}`, {
+            const response = await fetch(`/adisyon/${masa_id}`);
+            const data = await response.json();
+            const odemeler = data.detay.map(d => ({
+                siparis_id: d[4],
+                adet: d[2]
+            }));
+            const odeme_turu = document.getElementById("odemeTuru")?.value || "nakit";
+
+            if (odemeler.length === 0) return alert("Ödenecek sipariş yok!");
+
+            const odemeResponse = await fetch(`/odeme_kapat/${masa_id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ odeme_turu })
+                body: JSON.stringify({ odemeler, odeme_turu })
             });
-            const result = await response.json();
+            const result = await odemeResponse.json();
             if (result.status === "success") {
                 masalariYukle();
                 document.getElementById("adisyon").innerHTML = "";
