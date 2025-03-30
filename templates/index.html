@@ -149,7 +149,7 @@
         .urun-satiri {
             margin: 10px 0;
         }
-        #urunSecici {
+        #urunSecici, #modalUrunSecici {
             width: 200px;
         }
         #favoriUrunler {
@@ -164,7 +164,6 @@
             margin-top: 10px;
             display: none;
         }
-        /* Modal Stilleri */
         .modal {
             display: none;
             position: fixed;
@@ -220,6 +219,9 @@
             <select id="masaSec">
                 <option value="">Masa Seç</option>
             </select>
+            <select id="kategoriSecici" onchange="kategoriFiltrele()">
+                <option value="">Kategori Seç</option>
+            </select>
             <div id="favoriUrunler"></div>
             <input type="text" id="urunAra" placeholder="Ürün ara..." style="width: 200px;" oninput="urunleriFiltrele()">
             <select id="urunSecici" onchange="urunEkleTabloya(this)">
@@ -240,13 +242,23 @@
             </table>
         </div>
         <div id="urunEkleTab" class="tab-content">
-            <h2>Ürün Yönetimi</h2>
+            <h2>Ürün ve Kategori Yönetimi</h2>
+            <h3>Kategoriler</h3>
+            <input type="text" id="yeniKategoriAdi" placeholder="Kategori Adı (ör: Tatlılar)" style="width: 150px;">
+            <button onclick="yeniKategoriEkle()">Kategori Ekle</button>
+            <table id="kategoriTablosu">
+                <tr><th>Kategori Adı</th><th>İşlem</th></tr>
+            </table>
+            <h3>Ürünler</h3>
             <table id="urunTablosu">
-                <tr><th>Ürün Adı</th><th>Fiyat (TL)</th><th>İşlem</th></tr>
+                <tr><th>Ürün Adı</th><th>Fiyat (TL)</th><th>Kategori</th><th>İşlem</th></tr>
             </table>
             <div class="urun-satiri">
                 <input type="text" id="yeniUrunAdi" placeholder="Ürün Adı (ör: Kahve)" style="width: 150px;">
                 <input type="number" id="yeniUrunFiyat" min="0" step="0.01" placeholder="Fiyat (ör: 20.00)" style="width: 100px;">
+                <select id="yeniUrunKategori" style="width: 150px;">
+                    <option value="">Kategori Seç</option>
+                </select>
                 <button onclick="yeniUrunEkle()">Ekle</button>
             </div>
         </div>
@@ -269,9 +281,12 @@
     <!-- Sipariş Ekle Modal -->
     <div id="siparisModal" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closeModal()">&times;</span>
+            <span class="close" onclick="closeModal()">×</span>
             <h2 id="modalMasaAdi">Masa Siparişi</h2>
             <input type="hidden" id="modalMasaId">
+            <select id="modalKategoriSecici" onchange="modalKategoriFiltrele()">
+                <option value="">Kategori Seç</option>
+            </select>
             <input type="text" id="modalUrunAra" placeholder="Ürün ara..." style="width: 200px;" oninput="modalUrunleriFiltrele()">
             <select id="modalUrunSecici" onchange="modalUrunEkleTabloya(this)">
                 <option value="">Ürün Seç</option>
@@ -286,6 +301,7 @@
 
     <script>
         let tumUrunler = [];
+        let tumKategoriler = [];
 
         function openTab(tabId, event) {
             const tabs = document.getElementsByClassName("tab-content");
@@ -299,10 +315,14 @@
                 event.currentTarget.classList.add("active");
             }
             if (tabId === 'masalarTab') masalariYukle();
-            if (tabId === 'urunEkleTab') urunleriTabloyaYukle();
+            if (tabId === 'urunEkleTab') {
+                urunleriTabloyaYukle();
+                kategorileriTabloyaYukle();
+            }
             if (tabId === 'masaEkleTab') masalariTabloyaYukle();
             if (tabId === 'siparisEkleTab') {
                 urunleriYukle();
+                kategorileriYukle();
                 document.getElementById("siparisMesaji").style.display = "none";
             }
         }
@@ -362,25 +382,27 @@
                 const response = await fetch('/urunler');
                 if (!response.ok) throw new Error("Ürünler yüklenemedi: " + response.status);
                 tumUrunler = await response.json();
-                const urunSecici = document.getElementById("urunSecici");
-                const favoriUrunler = document.getElementById("favoriUrunler");
-                const modalUrunSecici = document.getElementById("modalUrunSecici");
-                urunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
-                modalUrunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
-                favoriUrunler.innerHTML = "";
-                
-                tumUrunler.forEach(u => {
-                    urunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
-                    modalUrunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
-                });
+                kategoriFiltrele(); // İlk yüklemede filtreyi uygula
+            } catch (error) {
+                console.error(error);
+            }
+        }
 
-                const favoriler = tumUrunler.slice(0, 4);
-                favoriler.forEach(u => {
-                    const button = document.createElement("button");
-                    button.className = "favori-button";
-                    button.textContent = `${u[1]} (${u[2]} TL)`;
-                    button.onclick = () => urunEkleTabloyaButon(u[0], u[1]);
-                    favoriUrunler.appendChild(button);
+        async function kategorileriYukle() {
+            try {
+                const response = await fetch('/kategoriler');
+                if (!response.ok) throw new Error("Kategoriler yüklenemedi: " + response.status);
+                tumKategoriler = await response.json();
+                const kategoriSecici = document.getElementById("kategoriSecici");
+                const modalKategoriSecici = document.getElementById("modalKategoriSecici");
+                const yeniUrunKategori = document.getElementById("yeniUrunKategori");
+                kategoriSecici.innerHTML = "<option value=''>Tüm Kategoriler</option>";
+                modalKategoriSecici.innerHTML = "<option value=''>Tüm Kategoriler</option>";
+                yeniUrunKategori.innerHTML = "<option value=''>Kategori Seç</option>";
+                tumKategoriler.forEach(k => {
+                    kategoriSecici.innerHTML += `<option value="${k[0]}">${k[1]}</option>`;
+                    modalKategoriSecici.innerHTML += `<option value="${k[0]}">${k[1]}</option>`;
+                    yeniUrunKategori.innerHTML += `<option value="${k[0]}">${k[1]}</option>`;
                 });
             } catch (error) {
                 console.error(error);
@@ -389,10 +411,11 @@
 
         function urunleriFiltrele() {
             const arama = document.getElementById("urunAra").value.toLowerCase();
+            const kategori_id = document.getElementById("kategoriSecici").value;
             const urunSecici = document.getElementById("urunSecici");
             urunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
             tumUrunler
-                .filter(u => u[1].toLowerCase().includes(arama))
+                .filter(u => u[1].toLowerCase().includes(arama) && (!kategori_id || u[3] == kategori_id))
                 .forEach(u => {
                     urunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
                 });
@@ -400,13 +423,22 @@
 
         function modalUrunleriFiltrele() {
             const arama = document.getElementById("modalUrunAra").value.toLowerCase();
+            const kategori_id = document.getElementById("modalKategoriSecici").value;
             const modalUrunSecici = document.getElementById("modalUrunSecici");
             modalUrunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
             tumUrunler
-                .filter(u => u[1].toLowerCase().includes(arama))
+                .filter(u => u[1].toLowerCase().includes(arama) && (!kategori_id || u[3] == kategori_id))
                 .forEach(u => {
                     modalUrunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
                 });
+        }
+
+        function kategoriFiltrele() {
+            urunleriFiltrele();
+        }
+
+        function modalKategoriFiltrele() {
+            modalUrunleriFiltrele();
         }
 
         async function urunleriTabloyaYukle() {
@@ -415,19 +447,42 @@
                 if (!response.ok) throw new Error("Ürünler yüklenemedi: " + response.status);
                 const urunler = await response.json();
                 const urunTablosu = document.getElementById("urunTablosu");
-                urunTablosu.innerHTML = "<tr><th>Ürün Adı</th><th>Fiyat (TL)</th><th>İşlem</th></tr>";
+                urunTablosu.innerHTML = "<tr><th>Ürün Adı</th><th>Fiyat (TL)</th><th>Kategori</th><th>İşlem</th></tr>";
                 urunler.forEach(u => {
+                    const kategori = tumKategoriler.find(k => k[0] === u[3]) || [null, "Kategorisiz"];
                     urunTablosu.innerHTML += `
                         <tr>
                             <td>${u[1]}</td>
                             <td>${u[2]}</td>
+                            <td>${kategori[1]}</td>
                             <td><button class="sil-button" onclick="urunSil(${u[0]})">Sil</button></td>
                         </tr>
                     `;
                 });
             } catch (error) {
                 console.error(error);
-                document.getElementById("urunTablosu").innerHTML = "<tr><td colspan='3'>Ürünler yüklenemedi.</td></tr>";
+                document.getElementById("urunTablosu").innerHTML = "<tr><td colspan='4'>Ürünler yüklenemedi.</td></tr>";
+            }
+        }
+
+        async function kategorileriTabloyaYukle() {
+            try {
+                const response = await fetch('/kategoriler');
+                if (!response.ok) throw new Error("Kategoriler yüklenemedi: " + response.status);
+                const kategoriler = await response.json();
+                const kategoriTablosu = document.getElementById("kategoriTablosu");
+                kategoriTablosu.innerHTML = "<tr><th>Kategori Adı</th><th>İşlem</th></tr>";
+                kategoriler.forEach(k => {
+                    kategoriTablosu.innerHTML += `
+                        <tr>
+                            <td>${k[1]}</td>
+                            <td><button class="sil-button" onclick="kategoriSil(${k[0]})">Sil</button></td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error(error);
+                document.getElementById("kategoriTablosu").innerHTML = "<tr><td colspan='2'>Kategoriler yüklenemedi.</td></tr>";
             }
         }
 
@@ -594,7 +649,8 @@
             document.getElementById("modalSiparisTablosu").innerHTML = "<tr><th>Ürün</th><th>Adet</th><th>İşlem</th></tr>";
             document.getElementById("modalSiparisMesaji").style.display = "none";
             modal.style.display = "block";
-            modalUrunleriFiltrele(); // Ürün listesini yenile
+            kategorileriYukle(); // Modal açıldığında kategorileri yenile
+            modalUrunleriFiltrele();
         }
 
         function closeModal() {
@@ -666,16 +722,32 @@
         async function yeniUrunEkle() {
             const urun_adi = document.getElementById("yeniUrunAdi").value;
             const fiyat = document.getElementById("yeniUrunFiyat").value;
+            const kategori_id = document.getElementById("yeniUrunKategori").value || null;
             if (!urun_adi || !fiyat) return alert("Ürün adı ve fiyat giriniz!");
             await fetch('/urun_ekle', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ urun_adi, fiyat })
+                body: JSON.stringify({ urun_adi, fiyat, kategori_id })
             });
             document.getElementById("yeniUrunAdi").value = "";
             document.getElementById("yeniUrunFiyat").value = "";
+            document.getElementById("yeniUrunKategori").value = "";
             urunleriYukle();
             urunleriTabloyaYukle();
+            openTab('urunEkleTab');
+        }
+
+        async function yeniKategoriEkle() {
+            const kategori_adi = document.getElementById("yeniKategoriAdi").value;
+            if (!kategori_adi) return alert("Kategori adı giriniz!");
+            await fetch('/kategori_ekle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kategori_adi })
+            });
+            document.getElementById("yeniKategoriAdi").value = "";
+            kategorileriYukle();
+            kategorileriTabloyaYukle();
             openTab('urunEkleTab');
         }
 
@@ -707,6 +779,24 @@
                     urunleriTabloyaYukle();
                 } else {
                     alert("Ürün silinirken bir hata oluştu!");
+                }
+            }
+        }
+
+        async function kategoriSil(kategori_id) {
+            if (confirm("Bu kategoriyi silmek istediğinize emin misiniz? Ürünler kategorisiz kalacak.")) {
+                const response = await fetch(`/kategori_sil/${kategori_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    kategorileriYukle();
+                    urunleriYukle();
+                    kategorileriTabloyaYukle();
+                    urunleriTabloyaYukle();
+                } else {
+                    alert("Kategori silinirken bir hata oluştu!");
                 }
             }
         }
@@ -755,8 +845,10 @@
 
         masalariYukle();
         urunleriYukle();
+        kategorileriYukle();
         urunleriTabloyaYukle();
         masalariTabloyaYukle();
+        kategorileriTabloyaYukle();
     </script>
 </body>
 </html>

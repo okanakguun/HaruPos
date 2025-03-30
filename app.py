@@ -14,7 +14,6 @@ def get_db_connection():
     except psycopg2.Error as e:
         raise Exception(f"Veritabanı bağlantı hatası: {str(e)}")
 
-# Sabit lisans anahtarı
 LICENSE_KEY = "KAFE123"
 
 def check_license():
@@ -30,7 +29,7 @@ def index():
 def masalar():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('SELECT masa_id, masa_adi, durum FROM masalar ORDER BY masa_id')  # ORDER BY eklendi
+    cur.execute('SELECT masa_id, masa_adi, durum FROM masalar ORDER BY masa_id')
     masalar = cur.fetchall()
     cur.close()
     conn.close()
@@ -40,11 +39,21 @@ def masalar():
 def urunler():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('SELECT urun_id, urun_adi, fiyat FROM urunler')
+    cur.execute('SELECT urun_id, urun_adi, fiyat, kategori_id FROM urunler ORDER BY urun_id')
     urunler = cur.fetchall()
     cur.close()
     conn.close()
     return jsonify([list(u) for u in urunler])
+
+@app.route('/kategoriler')
+def kategoriler():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT kategori_id, kategori_adi FROM kategoriler ORDER BY kategori_id')
+    kategoriler = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify([list(k) for k in kategoriler])
 
 @app.route('/siparis_ekle', methods=['POST'])
 def siparis_ekle():
@@ -119,7 +128,19 @@ def urun_ekle():
     data = request.get_json()
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('INSERT INTO urunler (urun_adi, fiyat) VALUES (%s, %s)', (data['urun_adi'], data['fiyat']))
+    cur.execute('INSERT INTO urunler (urun_adi, fiyat, kategori_id) VALUES (%s, %s, %s)',
+                (data['urun_adi'], data['fiyat'], data['kategori_id']))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/kategori_ekle', methods=['POST'])
+def kategori_ekle():
+    data = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO kategoriler (kategori_adi) VALUES (%s)', (data['kategori_adi'],))
     conn.commit()
     cur.close()
     conn.close()
@@ -129,11 +150,8 @@ def urun_ekle():
 def masa_sil(masa_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    # İlgili siparişleri sil
     cur.execute('DELETE FROM siparisler WHERE masa_id = %s', (masa_id,))
-    # İlgili ödemeleri sil (isteğe bağlı, eğer istemiyorsan bu satırı kaldır)
     cur.execute('DELETE FROM odemeler WHERE masa_id = %s', (masa_id,))
-    # Masayı sil
     cur.execute('DELETE FROM masalar WHERE masa_id = %s', (masa_id,))
     conn.commit()
     cur.close()
@@ -144,10 +162,20 @@ def masa_sil(masa_id):
 def urun_sil(urun_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    # İlgili siparişleri sil
     cur.execute('DELETE FROM siparisler WHERE urun_id = %s', (urun_id,))
-    # Ürünü sil
     cur.execute('DELETE FROM urunler WHERE urun_id = %s', (urun_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/kategori_sil/<int:kategori_id>', methods=['POST'])
+def kategori_sil(kategori_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Kategoriye bağlı ürünleri güncelle (NULL yap)
+    cur.execute('UPDATE urunler SET kategori_id = NULL WHERE kategori_id = %s', (kategori_id,))
+    cur.execute('DELETE FROM kategoriler WHERE kategori_id = %s', (kategori_id,))
     conn.commit()
     cur.close()
     conn.close()
