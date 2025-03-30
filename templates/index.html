@@ -52,19 +52,19 @@
         }
         .masa-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); /* 140px -> 160px, auto-fill -> auto-fit */
-            gap: 20px; /* Boşluk artırıldı: 15px -> 20px */
-            justify-items: center; /* Masaları ortala */
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 20px;
+            justify-items: center;
         }
         .masa {
-            width: 100%; /* Sabit 140px yerine %100, grid hücresine sığsın */
-            max-width: 140px; /* Maksimum genişlik 140px */
+            width: 100%;
+            max-width: 140px;
             padding: 15px;
             border-radius: 8px;
             text-align: center;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             transition: transform 0.2s;
-            box-sizing: border-box; /* Padding’i genişliğe dahil et */
+            box-sizing: border-box;
         }
         .masa:hover {
             transform: scale(1.05);
@@ -164,6 +164,39 @@
             margin-top: 10px;
             display: none;
         }
+        /* Modal Stilleri */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 400px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover, .close:focus {
+            color: black;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
@@ -233,6 +266,24 @@
         </div>
     </div>
 
+    <!-- Sipariş Ekle Modal -->
+    <div id="siparisModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2 id="modalMasaAdi">Masa Siparişi</h2>
+            <input type="hidden" id="modalMasaId">
+            <input type="text" id="modalUrunAra" placeholder="Ürün ara..." style="width: 200px;" oninput="modalUrunleriFiltrele()">
+            <select id="modalUrunSecici" onchange="modalUrunEkleTabloya(this)">
+                <option value="">Ürün Seç</option>
+            </select>
+            <table id="modalSiparisTablosu">
+                <tr><th>Ürün</th><th>Adet</th><th>İşlem</th></tr>
+            </table>
+            <button onclick="modalSiparisEkle()">Siparişi Kaydet</button>
+            <p id="modalSiparisMesaji" class="success-message">Sipariş başarıyla kaydedildi!</p>
+        </div>
+    </div>
+
     <script>
         let tumUrunler = [];
 
@@ -271,6 +322,7 @@
                     div.innerHTML = `
                         <i class="fas fa-chair ${m[2] === 'dolu' ? 'fa-red' : 'fa-green'}"></i><br>
                         ${m[1]}<br>
+                        <button onclick="openSiparisModal(${m[0]}, '${m[1]}')">Sipariş Ekle</button><br>
                         <button onclick="adisyonGoster(${m[0]})">Adisyon</button><br>
                         <button onclick="odemeKapat(${m[0]})">Ödeme Kapat</button>
                     `;
@@ -312,11 +364,14 @@
                 tumUrunler = await response.json();
                 const urunSecici = document.getElementById("urunSecici");
                 const favoriUrunler = document.getElementById("favoriUrunler");
+                const modalUrunSecici = document.getElementById("modalUrunSecici");
                 urunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
+                modalUrunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
                 favoriUrunler.innerHTML = "";
                 
                 tumUrunler.forEach(u => {
                     urunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
+                    modalUrunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
                 });
 
                 const favoriler = tumUrunler.slice(0, 4);
@@ -340,6 +395,17 @@
                 .filter(u => u[1].toLowerCase().includes(arama))
                 .forEach(u => {
                     urunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
+                });
+        }
+
+        function modalUrunleriFiltrele() {
+            const arama = document.getElementById("modalUrunAra").value.toLowerCase();
+            const modalUrunSecici = document.getElementById("modalUrunSecici");
+            modalUrunSecici.innerHTML = "<option value=''>Ürün Seç</option>";
+            tumUrunler
+                .filter(u => u[1].toLowerCase().includes(arama))
+                .forEach(u => {
+                    modalUrunSecici.innerHTML += `<option value="${u[0]}" data-fiyat="${u[2]}">${u[1]} (${u[2]} TL)</option>`;
                 });
         }
 
@@ -397,6 +463,38 @@
             }
         }
 
+        function modalUrunEkleTabloya(select) {
+            const urun_id = select.value;
+            if (!urun_id) return;
+            const urun_adi = select.options[select.selectedIndex].text.split(' (')[0];
+            modalUrunEkleTabloyaButon(urun_id, urun_adi);
+            select.value = "";
+            document.getElementById("modalUrunAra").value = "";
+            modalUrunleriFiltrele();
+        }
+
+        function modalUrunEkleTabloyaButon(urun_id, urun_adi) {
+            const modalSiparisTablosu = document.getElementById("modalSiparisTablosu");
+            const mevcutSatir = modalSiparisTablosu.querySelector(`tr[data-urun-id="${urun_id}"]`);
+            if (mevcutSatir) {
+                const adetInput = mevcutSatir.querySelector(".adet");
+                adetInput.value = parseInt(adetInput.value) + 1;
+            } else {
+                const yeniSatir = document.createElement("tr");
+                yeniSatir.setAttribute("data-urun-id", urun_id);
+                yeniSatir.innerHTML = `
+                    <td>${urun_adi}</td>
+                    <td>
+                        <button class="adet-button" onclick="adetAzalt(this)">-</button>
+                        <input type="number" class="adet" min="1" value="1" readonly>
+                        <button class="adet-button" onclick="adetArtir(this)">+</button>
+                    </td>
+                    <td><button onclick="satirSil(this)">Sil</button></td>
+                `;
+                modalSiparisTablosu.appendChild(yeniSatir);
+            }
+        }
+
         function adetArtir(button) {
             const input = button.parentElement.querySelector(".adet");
             input.value = parseInt(input.value) + 1;
@@ -451,6 +549,56 @@
                 console.error("Sipariş kaydedilemedi: " + response.status);
                 alert("Sipariş kaydedilirken bir hata oluştu: " + response.status);
             }
+        }
+
+        async function modalSiparisEkle() {
+            const masa_id = document.getElementById("modalMasaId").value;
+            const modalSiparisTablosu = document.getElementById("modalSiparisTablosu");
+            const siparisSatirlari = modalSiparisTablosu.querySelectorAll("tr[data-urun-id]");
+            const urunler = [];
+            siparisSatirlari.forEach(satir => {
+                const urun_id = satir.getAttribute("data-urun-id");
+                const adet = satir.querySelector(".adet").value;
+                if (urun_id && adet) {
+                    urunler.push({ urun_id, adet });
+                }
+            });
+            if (urunler.length === 0) return alert("En az bir ürün seçiniz!");
+
+            const response = await fetch('/siparis_ekle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ masa_id, urunler })
+            });
+
+            if (response.ok) {
+                masalariYukle();
+                modalSiparisTablosu.innerHTML = "<tr><th>Ürün</th><th>Adet</th><th>İşlem</th></tr>";
+                const mesaj = document.getElementById("modalSiparisMesaji");
+                mesaj.style.display = "block";
+                setTimeout(() => {
+                    mesaj.style.display = "none";
+                    closeModal();
+                    adisyonGoster(masa_id);
+                }, 2000);
+            } else {
+                console.error("Sipariş kaydedilemedi: " + response.status);
+                alert("Sipariş kaydedilirken bir hata oluştu: " + response.status);
+            }
+        }
+
+        function openSiparisModal(masa_id, masa_adi) {
+            const modal = document.getElementById("siparisModal");
+            document.getElementById("modalMasaId").value = masa_id;
+            document.getElementById("modalMasaAdi").textContent = `${masa_adi} Siparişi`;
+            document.getElementById("modalSiparisTablosu").innerHTML = "<tr><th>Ürün</th><th>Adet</th><th>İşlem</th></tr>";
+            document.getElementById("modalSiparisMesaji").style.display = "none";
+            modal.style.display = "block";
+            modalUrunleriFiltrele(); // Ürün listesini yenile
+        }
+
+        function closeModal() {
+            document.getElementById("siparisModal").style.display = "none";
         }
 
         async function adisyonGoster(masa_id) {
