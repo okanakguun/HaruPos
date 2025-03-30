@@ -196,6 +196,11 @@
             color: black;
             text-decoration: none;
         }
+        #seciliToplam {
+            font-weight: bold;
+            color: #007bff;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -265,6 +270,15 @@
         <div id="adisyonTab" class="tab-content">
             <h2>Adisyon Detayı</h2>
             <div id="adisyon"></div>
+            <div id="odemeSecenekleri" style="margin-top: 20px;">
+                <select id="odemeTuru">
+                    <option value="nakit">Nakit Ödeme</option>
+                    <option value="kredi_karti">Kredi Kartı</option>
+                </select>
+                <button onclick="odemeKapatSecili()">Seçili Ödemeyi Kapat</button>
+                <button onclick="odemeKapatTam()">Tam Ödemeyi Kapat</button>
+                <p id="seciliToplam">Seçili Toplam: 0 TL</p>
+            </div>
         </div>
         <div id="odemeGecmisiTab" class="tab-content">
             <h2>Ödeme Geçmişi</h2>
@@ -344,7 +358,7 @@
                         ${m[1]}<br>
                         <button onclick="openSiparisModal(${m[0]}, '${m[1]}')">Sipariş Ekle</button><br>
                         <button onclick="adisyonGoster(${m[0]})">Adisyon</button><br>
-                        <button onclick="odemeKapat(${m[0]})">Ödeme Kapat</button>
+                        <button onclick="odemeKapatTam(${m[0]})">Ödeme Kapat</button>
                     `;
                     masaDiv.appendChild(div);
                     masaSec.innerHTML += `<option value="${m[0]}">${m[1]}</option>`;
@@ -382,7 +396,7 @@
                 const response = await fetch('/urunler');
                 if (!response.ok) throw new Error("Ürünler yüklenemedi: " + response.status);
                 tumUrunler = await response.json();
-                kategoriFiltrele(); // İlk yüklemede filtreyi uygula
+                kategoriFiltrele();
             } catch (error) {
                 console.error(error);
             }
@@ -649,7 +663,7 @@
             document.getElementById("modalSiparisTablosu").innerHTML = "<tr><th>Ürün</th><th>Adet</th><th>İşlem</th></tr>";
             document.getElementById("modalSiparisMesaji").style.display = "none";
             modal.style.display = "block";
-            kategorileriYukle(); // Modal açıldığında kategorileri yenile
+            kategorileriYukle();
             modalUrunleriFiltrele();
         }
 
@@ -668,17 +682,25 @@
                 }
                 const adisyonDiv = document.getElementById("adisyon");
                 let html = `<h3>${data.detay[0]?.[0] || 'Masa'} Adisyonu</h3>`;
-                html += `<table><tr><th>Ürün</th><th>Adet</th><th>Toplam</th><th>İşlem</th></tr>`;
+                html += `<table><tr><th>Seç</th><th>Ürün</th><th>Adet</th><th>Toplam</th><th>İşlem</th></tr>`;
                 data.detay.forEach(d => {
                     const siparis_id = d[4];
-                    html += `<tr><td>${d[1]}</td><td>${d[2]}</td><td>${d[3]} TL</td><td>
-                        <button onclick="siparisDuzenle(${siparis_id}, ${masa_id})">Düzenle</button>
-                        <button onclick="siparisSil(${siparis_id}, ${masa_id})">Sil</button>
-                    </td></tr>`;
+                    html += `
+                        <tr data-siparis-id="${siparis_id}">
+                            <td><input type="checkbox" class="siparis-sec" onchange="hesaplaSeciliToplam(${masa_id})"></td>
+                            <td>${d[1]}</td>
+                            <td>${d[2]}</td>
+                            <td>${d[3]} TL</td>
+                            <td>
+                                <button onclick="siparisDuzenle(${siparis_id}, ${masa_id})">Düzenle</button>
+                                <button onclick="siparisSil(${siparis_id}, ${masa_id})">Sil</button>
+                            </td>
+                        </tr>`;
                 });
                 html += `</table><p class="toplam">Genel Toplam: ${data.toplam} TL</p>`;
                 adisyonDiv.innerHTML = html;
                 openTab('adisyonTab');
+                hesaplaSeciliToplam(masa_id); // İlk toplamı hesapla
             } catch (error) {
                 console.error("Adisyon hatası:", error.message);
                 document.getElementById("adisyon").innerHTML = `<p>Adisyon yüklenirken bir hata oluştu: ${error.message}</p>`;
@@ -686,20 +708,65 @@
             }
         }
 
-        async function odemeKapat(masa_id) {
-            await fetch(`/odeme_kapat/${masa_id}`, { method: 'POST' });
-            masalariYukle();
-            document.getElementById("adisyon").innerHTML = "";
-            openTab('masalarTab');
+        function hesaplaSeciliToplam(masa_id) {
+            const seciliCheckboxlar = document.querySelectorAll(".siparis-sec:checked");
+            let seciliToplam = 0;
+            seciliCheckboxlar.forEach(checkbox => {
+                const satir = checkbox.closest("tr");
+                const toplam = parseFloat(satir.cells[3].textContent.replace(" TL", ""));
+                seciliToplam += toplam;
+            });
+            document.getElementById("seciliToplam").textContent = `Seçili Toplam: ${seciliToplam.toFixed(2)} TL`;
+        }
+
+        async function odemeKapatSecili() {
+            const masa_id = document.querySelector("#adisyon h3").textContent.split(" ")[0].replace("Masa", "").trim();
+            const seciliCheckboxlar = document.querySelectorAll(".siparis-sec:checked");
+            const siparis_ids = Array.from(seciliCheckboxlar).map(cb => cb.closest("tr").getAttribute("data-siparis-id"));
+            const odeme_turu = document.getElementById("odemeTuru").value;
+
+            if (siparis_ids.length === 0) return alert("Lütfen ödeme için en az bir ürün seçiniz!");
+
+            const response = await fetch(`/odeme_kapat/${masa_id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ siparis_ids, odeme_turu })
+            });
+            const result = await response.json();
+            if (result.status === "success") {
+                masalariYukle();
+                adisyonGoster(masa_id);
+                alert(`Seçili ödeme (${odeme_turu}) ${result.toplam} TL olarak kapatıldı.`);
+            } else {
+                alert("Ödeme kapatılırken bir hata oluştu!");
+            }
+        }
+
+        async function odemeKapatTam(masa_id) {
+            const odeme_turu = document.getElementById("odemeTuru")?.value || "nakit"; // Modal yoksa varsayılan nakit
+            const response = await fetch(`/odeme_kapat/${masa_id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ odeme_turu })
+            });
+            const result = await response.json();
+            if (result.status === "success") {
+                masalariYukle();
+                document.getElementById("adisyon").innerHTML = "";
+                openTab('masalarTab');
+                alert(`Tam ödeme (${odeme_turu}) ${result.toplam} TL olarak kapatıldı.`);
+            } else {
+                alert("Ödeme kapatılırken bir hata oluştu!");
+            }
         }
 
         async function odemeleriGoster() {
             const response = await fetch('/odemeler');
             const odemeler = await response.json();
             const gecmisDiv = document.getElementById("odemeGecmisi");
-            let html = `<table><tr><th>Masa</th><th>Tutar</th><th>Tarih</th></tr>`;
+            let html = `<table><tr><th>Masa</th><th>Tutar</th><th>Tarih</th><th>Ödeme Türü</th></tr>`;
             odemeler.forEach(o => {
-                html += `<tr><td>${o[0]}</td><td>${o[1]} TL</td><td>${new Date(o[2]).toLocaleString()}</td></tr>`;
+                html += `<tr><td>${o[0]}</td><td>${o[1]} TL</td><td>${new Date(o[2]).toLocaleString()}</td><td>${o[3]}</td></tr>`;
             });
             html += `</table>`;
             gecmisDiv.innerHTML = html;

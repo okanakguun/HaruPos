@@ -90,23 +90,47 @@ def adisyon(masa_id):
 
 @app.route('/odeme_kapat/<int:masa_id>', methods=['POST'])
 def odeme_kapat(masa_id):
+    data = request.get_json()
+    siparis_ids = data.get('siparis_ids', [])  # Seçili sipariş ID'leri
+    odeme_turu = data.get('odeme_turu')  # 'nakit' veya 'kredi_karti'
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('SELECT SUM(s.adet * u.fiyat) FROM siparisler s JOIN urunler u ON s.urun_id = u.urun_id WHERE s.masa_id = %s', (masa_id,))
-    toplam = cur.fetchone()[0] or 0
-    cur.execute('INSERT INTO odemeler (masa_id, tutar) VALUES (%s, %s)', (masa_id, toplam))
-    cur.execute('DELETE FROM siparisler WHERE masa_id = %s', (masa_id,))
-    cur.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ("bos", masa_id))
+    
+    if siparis_ids:  # Bölünmüş ödeme
+        cur.execute('''
+            SELECT SUM(s.adet * u.fiyat) 
+            FROM siparisler s 
+            JOIN urunler u ON s.urun_id = u.urun_id 
+            WHERE s.masa_id = %s AND s.siparis_id = ANY(%s)
+        ''', (masa_id, siparis_ids))
+        toplam = cur.fetchone()[0] or 0
+        cur.execute('INSERT INTO odemeler (masa_id, tutar, odeme_turu) VALUES (%s, %s, %s)',
+                    (masa_id, toplam, odeme_turu))
+        cur.execute('DELETE FROM siparisler WHERE masa_id = %s AND siparis_id = ANY(%s)',
+                    (masa_id, siparis_ids))
+    else:  # Tam ödeme
+        cur.execute('SELECT SUM(s.adet * u.fiyat) FROM siparisler s JOIN urunler u ON s.urun_id = u.urun_id WHERE s.masa_id = %s', (masa_id,))
+        toplam = cur.fetchone()[0] or 0
+        cur.execute('INSERT INTO odemeler (masa_id, tutar, odeme_turu) VALUES (%s, %s, %s)',
+                    (masa_id, toplam, odeme_turu))
+        cur.execute('DELETE FROM siparisler WHERE masa_id = %s', (masa_id,))
+    
+    # Masa boşaldıysa durumunu güncelle
+    cur.execute('SELECT COUNT(*) FROM siparisler WHERE masa_id = %s', (masa_id,))
+    kalan_siparis = cur.fetchone()[0]
+    if kalan_siparis == 0:
+        cur.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ("bos", masa_id))
+    
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"status": "success"})
+    return jsonify({"status": "success", "toplam": toplam})
 
 @app.route('/odemeler')
 def odemeler():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('SELECT masa_id, tutar, tarih FROM odemeler')
+    cur.execute('SELECT masa_id, tutar, tarih, odeme_turu FROM odemeler')
     odemeler = cur.fetchall()
     cur.close()
     conn.close()
@@ -173,7 +197,6 @@ def urun_sil(urun_id):
 def kategori_sil(kategori_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    # Kategoriye bağlı ürünleri güncelle (NULL yap)
     cur.execute('UPDATE urunler SET kategori_id = NULL WHERE kategori_id = %s', (kategori_id,))
     cur.execute('DELETE FROM kategoriler WHERE kategori_id = %s', (kategori_id,))
     conn.commit()
