@@ -375,6 +375,11 @@
                 const response = await fetch('/kategoriler');
                 if (!response.ok) throw new Error("Kategoriler yüklenemedi: " + response.status);
                 tumKategoriler = await response.json();
+                const yeniUrunKategori = document.getElementById("yeniUrunKategori");
+                yeniUrunKategori.innerHTML = "<option value=''>Kategori Seç</option>";
+                tumKategoriler.forEach(k => {
+                    yeniUrunKategori.innerHTML += `<option value="${k[0]}">${k[1]}</option>`;
+                });
             } catch (error) {
                 console.error(error);
             }
@@ -713,10 +718,10 @@
             document.getElementById("yeniUrunAdi").value = "";
             document.getElementById("yeniUrunFiyat").value = "";
             document.getElementById("yeniUrunKategori").value = "";
-            await urunleriYukle(); // Ürün listesini güncelle
+            await urunleriYukle();
             urunleriTabloyaYukle();
             if (document.getElementById("siparisEkleTab").classList.contains("active")) {
-                kategorileriGoster(); // Sipariş Ekle sekmesindeysek güncelle
+                kategorileriGoster();
                 if (aktifKategoriId) urunleriGoster(aktifKategoriId);
             }
             openTab('urunEkleTab');
@@ -731,10 +736,10 @@
                 body: JSON.stringify({ kategori_adi })
             });
             document.getElementById("yeniKategoriAdi").value = "";
-            await kategorileriYukle(); // Kategori listesini güncelle
+            await kategorileriYukle(); // Dropdown’u da günceller
             kategorileriTabloyaYukle();
             if (document.getElementById("siparisEkleTab").classList.contains("active")) {
-                kategorileriGoster(); // Sipariş Ekle sekmesindeysek güncelle
+                kategorileriGoster();
                 if (aktifKategoriId) urunleriGoster(aktifKategoriId);
             }
             openTab('urunEkleTab');
@@ -784,7 +789,7 @@
                 });
                 const result = await response.json();
                 if (result.status === "success") {
-                    await kategorileriYukle();
+                    await kategorileriYukle(); // Dropdown’u da günceller
                     await urunleriYukle();
                     kategorileriTabloyaYukle();
                     urunleriTabloyaYukle();
