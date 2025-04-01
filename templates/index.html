@@ -276,7 +276,7 @@
                     <option value="kredi_karti">Kredi Kartı</option>
                 </select>
                 <button onclick="odemeKapatSecili()">Seçili Ödemeyi Kapat</button>
-                <button onclick="odemeKapatTam()">Tam Ödemeyi Kapat</button>
+                <button onclick="odemeKapatTam(currentMasaId)">Tam Ödemeyi Kapat</button>
                 <p id="seciliToplam">Seçili Toplam: 0 TL</p>
             </div>
         </div>
@@ -316,6 +316,7 @@
     <script>
         let tumUrunler = [];
         let tumKategoriler = [];
+        let currentMasaId = null; // Şu anda görüntülenen masanın ID’sini tutacak
 
         function openTab(tabId, event) {
             const tabs = document.getElementsByClassName("tab-content");
@@ -672,6 +673,7 @@
         }
 
         async function adisyonGoster(masa_id) {
+            currentMasaId = masa_id; // Masa ID’sini kaydet
             try {
                 const response = await fetch(`/adisyon/${masa_id}`);
                 if (!response.ok) throw new Error("Adisyon yüklenemedi: " + response.status);
@@ -714,15 +716,25 @@
             let seciliToplam = 0;
             seciliCheckboxlar.forEach(checkbox => {
                 const satir = checkbox.closest("tr");
-                const odenenAdet = parseInt(satir.querySelector(".odenecek-adet").value) || 0;
-                const birimFiyat = parseFloat(satir.cells[4].textContent.replace(" TL", "")) / parseInt(satir.cells[2].textContent);
+                const odenenAdetInput = satir.querySelector(".odenecek-adet");
+                const maxAdet = parseInt(satir.cells[2].textContent); // Toplam adet
+                let odenenAdet = parseInt(odenenAdetInput.value) || 0;
+                if (odenenAdet > maxAdet) {
+                    odenenAdet = maxAdet; // Maksimum adede sınırla
+                    odenenAdetInput.value = maxAdet;
+                }
+                const birimFiyat = parseFloat(satir.cells[4].textContent.replace(" TL", "")) / maxAdet;
                 seciliToplam += odenenAdet * birimFiyat;
             });
             document.getElementById("seciliToplam").textContent = `Seçili Toplam: ${seciliToplam.toFixed(2)} TL`;
         }
 
         async function odemeKapatSecili() {
-            const masa_id = document.querySelector("#adisyon h3").textContent.split(" ")[0].replace("Masa", "").trim();
+            if (!currentMasaId) {
+                alert("Masa seçilmemiş, lütfen bir masanın adisyonunu açın!");
+                return;
+            }
+            const masa_id = currentMasaId;
             const seciliCheckboxlar = document.querySelectorAll(".siparis-sec:checked");
             const odemeler = Array.from(seciliCheckboxlar).map(cb => {
                 const satir = cb.closest("tr");
@@ -735,45 +747,60 @@
 
             if (odemeler.length === 0) return alert("Lütfen ödeme için en az bir ürün ve adet seçiniz!");
 
-            const response = await fetch(`/odeme_kapat/${masa_id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ odemeler, odeme_turu })
-            });
-            const result = await response.json();
-            if (result.status === "success") {
-                masalariYukle();
-                adisyonGoster(masa_id);
-                alert(`Seçili ödeme (${odeme_turu}) ${result.toplam} TL olarak kapatıldı.`);
-            } else {
-                alert(result.message || "Ödeme kapatılırken bir hata oluştu!");
+            try {
+                const response = await fetch(`/odeme_kapat/${masa_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ odemeler, odeme_turu })
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    masalariYukle();
+                    adisyonGoster(masa_id);
+                    alert(`Seçili ödeme (${odeme_turu}) ${result.toplam} TL olarak kapatıldı.`);
+                } else {
+                    alert(result.message || "Ödeme kapatılırken bir hata oluştu!");
+                }
+            } catch (error) {
+                console.error("Hata:", error);
+                alert("Ödeme kapatma sırasında bir hata oluştu: " + error.message);
             }
         }
 
         async function odemeKapatTam(masa_id) {
-            const response = await fetch(`/adisyon/${masa_id}`);
-            const data = await response.json();
-            const odemeler = data.detay.map(d => ({
-                siparis_id: d[4],
-                adet: d[2]
-            }));
-            const odeme_turu = document.getElementById("odemeTuru")?.value || "nakit";
+            if (!masa_id) {
+                alert("Masa seçilmemiş, lütfen bir masanın adisyonunu açın!");
+                return;
+            }
+            try {
+                const response = await fetch(`/adisyon/${masa_id}`);
+                if (!response.ok) throw new Error("Adisyon yüklenemedi: " + response.status);
+                const data = await response.json();
+                const odemeler = data.detay.map(d => ({
+                    siparis_id: d[4],
+                    adet: d[2]
+                }));
+                const odeme_turu = document.getElementById("odemeTuru")?.value || "nakit";
 
-            if (odemeler.length === 0) return alert("Ödenecek sipariş yok!");
+                if (odemeler.length === 0) return alert("Ödenecek sipariş yok!");
 
-            const odemeResponse = await fetch(`/odeme_kapat/${masa_id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ odemeler, odeme_turu })
-            });
-            const result = await odemeResponse.json();
-            if (result.status === "success") {
-                masalariYukle();
-                document.getElementById("adisyon").innerHTML = "";
-                openTab('masalarTab');
-                alert(`Tam ödeme (${odeme_turu}) ${result.toplam} TL olarak kapatıldı.`);
-            } else {
-                alert("Ödeme kapatılırken bir hata oluştu!");
+                const odemeResponse = await fetch(`/odeme_kapat/${masa_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ odemeler, odeme_turu })
+                });
+                const result = await odemeResponse.json();
+                if (result.status === "success") {
+                    masalariYukle();
+                    document.getElementById("adisyon").innerHTML = "";
+                    openTab('masalarTab');
+                    alert(`Tam ödeme (${odeme_turu}) ${result.toplam} TL olarak kapatıldı.`);
+                } else {
+                    alert(result.message || "Ödeme kapatılırken bir hata oluştu!");
+                }
+            } catch (error) {
+                console.error("Hata:", error);
+                alert("Ödeme kapatma sırasında bir hata oluştu: " + error.message);
             }
         }
 
