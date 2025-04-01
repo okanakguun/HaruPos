@@ -1,80 +1,267 @@
-from flask import Flask, jsonify, request
+from flask import Flask, render_template, request, jsonify, abort
 import psycopg2
-from psycopg2.extras import RealDictCursor
-from datetime import datetime
 import os
 
 app = Flask(__name__)
 
-# PostgreSQL bağlantısı
 def get_db_connection():
-    conn = psycopg2.connect(
-        dbname=os.environ.get('DB_NAME'),
-        user=os.environ.get('DB_USER'),
-        password=os.environ.get('DB_PASSWORD'),
-        host=os.environ.get('DB_HOST'),
-        port=os.environ.get('DB_PORT', 5432)
-    )
-    return conn
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        raise ValueError("DATABASE_URL çevresel değişkeni tanımlı değil!")
+    try:
+        conn = psycopg2.connect(db_url)
+        return conn
+    except psycopg2.Error as e:
+        raise Exception(f"Veritabanı bağlantı hatası: {str(e)}")
 
-# Masaları listeleme
-@app.route('/masalar', methods=['GET'])
+LICENSE_KEY = "KAFE123"
+
+def check_license():
+    return True
+
+@app.route('/')
+def index():
+    if not check_license():
+        abort(403, "Geçersiz lisans anahtarı!")
+    return render_template('index.html')
+
+@app.route('/masalar')
 def masalar():
     conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT * FROM masalar')
-    masalar = cursor.fetchall()
+    cur = conn.cursor()
+    cur.execute('SELECT masa_id, masa_adi, durum FROM masalar ORDER BY masa_id')
+    masalar = cur.fetchall()
+    cur.close()
     conn.close()
-    return jsonify(masalar)
+    return jsonify([list(m) for m in masalar])
 
-# Yeni masa ekleme
+@app.route('/urunler')
+def urunler():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT urun_id, urun_adi, fiyat, kategori_id FROM urunler ORDER BY urun_id')
+    urunler = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify([list(u) for u in urunler])
+
+@app.route('/kategoriler')
+def kategoriler():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT kategori_id, kategori_adi FROM kategoriler ORDER BY kategori_id')
+    kategoriler = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify([list(k) for k in kategoriler])
+
+@app.route('/siparis_ekle', methods=['POST'])
+def siparis_ekle():
+    data = request.get_json()
+    masa_id = data['masa_id']
+    urunler = data['urunler']
+    conn = get_db_connection()
+    cur = conn.cursor()
+    for urun in urunler:
+        cur.execute('INSERT INTO siparisler (masa_id, urun_id, adet) VALUES (%s, %s, %s)',
+                    (masa_id, urun['urun_id'], urun['adet']))
+    cur.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ("dolu", masa_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/adisyon/<int:masa_id>')
+def adisyon(masa_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT m.masa_adi, u.urun_adi, s.adet, (s.adet * u.fiyat) as toplam, s.siparis_id
+        FROM siparisler s
+        JOIN masalar m ON s.masa_id = m.masa_id
+        JOIN urunler u ON s.urun_id = u.urun_id
+        WHERE s.masa_id = %s
+    ''', (masa_id,))
+    detay = cur.fetchall()
+    toplam = sum(row[3] for row in detay)
+    cur.close()
+    conn.close()
+    return jsonify({"detay": [list(d) for d in detay], "toplam": toplam})
+
+@app.route('/odeme_kapat/<int:masa_id>', methods=['POST'])
+def odeme_kapat(masa_id):
+    data = request.get_json()
+    odemeler = data.get('odemeler', [])  # [{siparis_id, adet}, ...]
+    odeme_turu = data.get('odeme_turu', 'nakit')
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    toplam = 0
+    for odeme in odemeler:
+        siparis_id = odeme['siparis_id']
+        odenen_adet = int(odeme['adet'])
+        
+        # Sipariş bilgilerini al
+        cur.execute('''
+            SELECT s.adet, u.fiyat 
+            FROM siparisler s 
+            JOIN urunler u ON s.urun_id = u.urun_id 
+            WHERE s.siparis_id = %s
+        ''', (siparis_id,))
+        siparis = cur.fetchone()
+        if not siparis or odenen_adet > siparis[0]:
+            conn.close()
+            return jsonify({"status": "error", "message": f"Sipariş {siparis_id} için geçersiz adet"}), 400
+        
+        # Ödeme tutarını hesapla
+        tutar = odenen_adet * siparis[1]
+        toplam += tutar
+        
+        # Ödeme kaydını ekle
+        cur.execute('INSERT INTO odemeler (masa_id, tutar, odeme_turu) VALUES (%s, %s, %s)',
+                    (masa_id, tutar, odeme_turu))
+        
+        # Sipariş adedini güncelle veya sil
+        kalan_adet = siparis[0] - odenen_adet
+        if kalan_adet > 0:
+            cur.execute('UPDATE siparisler SET adet = %s WHERE siparis_id = %s',
+                        (kalan_adet, siparis_id))
+        else:
+            cur.execute('DELETE FROM siparisler WHERE siparis_id = %s', (siparis_id,))
+    
+    # Masa durumunu kontrol et ve güncelle
+    cur.execute('SELECT COUNT(*) FROM siparisler WHERE masa_id = %s', (masa_id,))
+    kalan_siparis = cur.fetchone()[0]
+    if kalan_siparis == 0:
+        cur.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ("bos", masa_id))
+    else:
+        cur.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ("dolu", masa_id))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success", "toplam": toplam})
+
+@app.route('/odemeler')
+def odemeler():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT masa_id, tutar, tarih, odeme_turu FROM odemeler')
+    odemeler = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify([list(o) for o in odemeler])
+
 @app.route('/masa_ekle', methods=['POST'])
 def masa_ekle():
     data = request.get_json()
-    masa_adi = data.get('masa_adi')
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO masalar (masa_adi, durum) VALUES (%s, %s)', (masa_adi, 'bos'))
+    cur = conn.cursor()
+    cur.execute('INSERT INTO masalar (masa_adi, durum) VALUES (%s, %s)', (data['masa_adi'], "bos"))
     conn.commit()
+    cur.close()
     conn.close()
     return jsonify({"status": "success"})
 
-# Masa silme
-@app.route('/masa_sil/<int:masa_id>', methods=['POST'])
-def masa_sil(masa_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM masalar WHERE masa_id = %s', (masa_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-# Ürünleri listeleme
-@app.route('/urunler', methods=['GET'])
-def urunler():
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT * FROM urunler')
-    urunler = cursor.fetchall()
-    conn.close()
-    return jsonify(urunler)
-
-# Yeni ürün ekleme
 @app.route('/urun_ekle', methods=['POST'])
 def urun_ekle():
     data = request.get_json()
-    urun_adi = data.get('urun_adi')
-    fiyat = data.get('fiyat')
-    kategori_id = data.get('kategori_id')
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO urunler (urun_adi, fiyat, kategori_id) VALUES (%s, %s, %s)', 
-                   (urun_adi, fiyat, kategori_id))
+    cur = conn.cursor()
+    cur.execute('INSERT INTO urunler (urun_adi, fiyat, kategori_id) VALUES (%s, %s, %s)',
+                (data['urun_adi'], data['fiyat'], data['kategori_id']))
     conn.commit()
+    cur.close()
     conn.close()
     return jsonify({"status": "success"})
 
-# Ürün düzenleme
+@app.route('/kategori_ekle', methods=['POST'])
+def kategori_ekle():
+    data = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO kategoriler (kategori_adi) VALUES (%s)', (data['kategori_adi'],))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/masa_sil/<int:masa_id>', methods=['POST'])
+def masa_sil(masa_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM siparisler WHERE masa_id = %s', (masa_id,))
+    cur.execute('DELETE FROM odemeler WHERE masa_id = %s', (masa_id,))
+    cur.execute('DELETE FROM masalar WHERE masa_id = %s', (masa_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/urun_sil/<int:urun_id>', methods=['POST'])
+def urun_sil(urun_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM siparisler WHERE urun_id = %s', (urun_id,))
+    cur.execute('DELETE FROM urunler WHERE urun_id = %s', (urun_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/kategori_sil/<int:kategori_id>', methods=['POST'])
+def kategori_sil(kategori_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('UPDATE urunler SET kategori_id = NULL WHERE kategori_id = %s', (kategori_id,))
+    cur.execute('DELETE FROM kategoriler WHERE kategori_id = %s', (kategori_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
+
+@app.route('/siparis_sil/<int:siparis_id>', methods=['POST'])
+def siparis_sil(siparis_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT masa_id FROM siparisler WHERE siparis_id = %s', (siparis_id,))
+    masa_id = cur.fetchone()[0]
+    cur.execute('DELETE FROM siparisler WHERE siparis_id = %s', (siparis_id,))
+    cur.execute('SELECT COUNT(*) FROM siparisler WHERE masa_id = %s', (masa_id,))
+    kalan_siparis = cur.fetchone()[0]
+    if kalan_siparis == 0:
+        cur.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ("bos", masa_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success", "masa_id": masa_id})
+
+@app.route('/siparis_duzenle/<int:siparis_id>', methods=['POST'])
+def siparis_duzenle(siparis_id):
+    data = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT masa_id FROM siparisler WHERE siparis_id = %s', (siparis_id,))
+    masa_id = cur.fetchone()[0]
+    cur.execute('UPDATE siparisler SET adet = %s WHERE siparis_id = %s', (data['adet'], siparis_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"masa_id": masa_id})
+
+@app.route('/gelir_raporu')
+def gelir_raporu():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT DATE(tarih), SUM(tutar) FROM odemeler GROUP BY DATE(tarih)')
+    gunluk_ozet = cur.fetchall()
+    cur.execute('SELECT SUM(tutar) FROM odemeler')
+    toplam_gelir = cur.fetchone()[0] or 0
+    cur.close()
+    conn.close()
+    return jsonify({"gunluk_ozet": [list(g) for g in gunluk_ozet], "toplam_gelir": toplam_gelir})
+
+# Yeni eklenen endpoint: Ürün düzenleme
 @app.route('/urun_duzenle/<int:urun_id>', methods=['POST'])
 def urun_duzenle(urun_id):
     data = request.get_json()
@@ -82,173 +269,13 @@ def urun_duzenle(urun_id):
     fiyat = data.get('fiyat')
     kategori_id = data.get('kategori_id')
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE urunler SET urun_adi = %s, fiyat = %s, kategori_id = %s WHERE urun_id = %s', 
-                   (urun_adi, fiyat, kategori_id, urun_id))
+    cur = conn.cursor()
+    cur.execute('UPDATE urunler SET urun_adi = %s, fiyat = %s, kategori_id = %s WHERE urun_id = %s',
+                (urun_adi, fiyat, kategori_id, urun_id))
     conn.commit()
+    cur.close()
     conn.close()
     return jsonify({"status": "success", "message": "Ürün güncellendi"})
-
-# Ürün silme
-@app.route('/urun_sil/<int:urun_id>', methods=['POST'])
-def urun_sil(urun_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM urunler WHERE urun_id = %s', (urun_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-# Kategorileri listeleme
-@app.route('/kategoriler', methods=['GET'])
-def kategoriler():
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT * FROM kategoriler')
-    kategoriler = cursor.fetchall()
-    conn.close()
-    return jsonify(kategoriler)
-
-# Yeni kategori ekleme
-@app.route('/kategori_ekle', methods=['POST'])
-def kategori_ekle():
-    data = request.get_json()
-    kategori_adi = data.get('kategori_adi')
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO kategoriler (kategori_adi) VALUES (%s)', (kategori_adi,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-# Kategori silme
-@app.route('/kategori_sil/<int:kategori_id>', methods=['POST'])
-def kategori_sil(kategori_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE urunler SET kategori_id = NULL WHERE kategori_id = %s', (kategori_id,))
-    cursor.execute('DELETE FROM kategoriler WHERE kategori_id = %s', (kategori_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-# Sipariş ekleme
-@app.route('/siparis_ekle', methods=['POST'])
-def siparis_ekle():
-    data = request.get_json()
-    masa_id = data.get('masa_id')
-    urunler = data.get('urunler')
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    for urun in urunler:
-        cursor.execute('INSERT INTO siparisler (masa_id, urun_id, adet) VALUES (%s, %s, %s)', 
-                       (masa_id, urun['urun_id'], urun['adet']))
-    cursor.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ('dolu', masa_id))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-# Sipariş silme
-@app.route('/siparis_sil/<int:siparis_id>', methods=['POST'])
-def siparis_sil(siparis_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT masa_id FROM siparisler WHERE siparis_id = %s', (siparis_id,))
-    masa_id = cursor.fetchone()['masa_id']
-    cursor.execute('DELETE FROM siparisler WHERE siparis_id = %s', (siparis_id,))
-    cursor.execute('SELECT COUNT(*) FROM siparisler WHERE masa_id = %s', (masa_id,))
-    siparis_sayisi = cursor.fetchone()[0]
-    if siparis_sayisi == 0:
-        cursor.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ('bos', masa_id))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success", "masa_id": masa_id})
-
-# Sipariş düzenleme
-@app.route('/siparis_duzenle/<int:siparis_id>', methods=['POST'])
-def siparis_duzenle(siparis_id):
-    data = request.get_json()
-    adet = data.get('adet')
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE siparisler SET adet = %s WHERE siparis_id = %s', (adet, siparis_id))
-    cursor.execute('SELECT masa_id FROM siparisler WHERE siparis_id = %s', (siparis_id,))
-    masa_id = cursor.fetchone()['masa_id']
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success", "masa_id": masa_id})
-
-# Adisyon gösterme
-@app.route('/adisyon/<int:masa_id>', methods=['GET'])
-def adisyon(masa_id):
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('''
-        SELECT m.masa_adi, u.urun_adi, s.adet, (s.adet * u.fiyat) as toplam, s.siparis_id
-        FROM siparisler s
-        JOIN masalar m ON s.masa_id = m.masa_id
-        JOIN urunler u ON s.urun_id = u.urun_id
-        WHERE s.masa_id = %s
-    ''', (masa_id,))
-    detay = cursor.fetchall()
-    cursor.execute('SELECT SUM(s.adet * u.fiyat) FROM siparisler s JOIN urunler u ON s.urun_id = u.urun_id WHERE s.masa_id = %s', (masa_id,))
-    toplam = cursor.fetchone()['sum'] or 0
-    conn.close()
-    return jsonify({"detay": detay, "toplam": toplam})
-
-# Ödeme kapatma
-@app.route('/odeme_kapat/<int:masa_id>', methods=['POST'])
-def odeme_kapat(masa_id):
-    data = request.get_json()
-    odemeler = data.get('odemeler')
-    odeme_turu = data.get('odeme_turu')
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    toplam = 0
-    for odeme in odemeler:
-        siparis_id = odeme['siparis_id']
-        adet = odeme['adet']
-        cursor.execute('SELECT urun_id, adet FROM siparisler WHERE siparis_id = %s', (siparis_id,))
-        siparis = cursor.fetchone()
-        urun_id, mevcut_adet = siparis['urun_id'], siparis['adet']
-        cursor.execute('SELECT fiyat FROM urunler WHERE urun_id = %s', (urun_id,))
-        fiyat = cursor.fetchone()['fiyat']
-        toplam += adet * fiyat
-        if mevcut_adet <= adet:
-            cursor.execute('DELETE FROM siparisler WHERE siparis_id = %s', (siparis_id,))
-        else:
-            cursor.execute('UPDATE siparisler SET adet = adet - %s WHERE siparis_id = %s', (adet, siparis_id))
-    cursor.execute('SELECT COUNT(*) FROM siparisler WHERE masa_id = %s', (masa_id,))
-    siparis_sayisi = cursor.fetchone()['count']
-    if siparis_sayisi == 0:
-        cursor.execute('UPDATE masalar SET durum = %s WHERE masa_id = %s', ('bos', masa_id))
-    cursor.execute('INSERT INTO odemeler (masa_id, tutar, odeme_tarihi, odeme_turu) VALUES (%s, %s, %s, %s)', 
-                   (masa_id, toplam, datetime.now().isoformat(), odeme_turu))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success", "toplam": toplam})
-
-# Ödeme geçmişini gösterme
-@app.route('/odemeler', methods=['GET'])
-def odemeler():
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT m.masa_adi, o.tutar, o.odeme_tarihi, o.odeme_turu FROM odemeler o JOIN masalar m ON o.masa_id = m.masa_id')
-    odemeler = cursor.fetchall()
-    conn.close()
-    return jsonify(odemeler)
-
-# Gelir raporu
-@app.route('/gelir_raporu', methods=['GET'])
-def gelir_raporu():
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT SUM(tutar) FROM odemeler')
-    toplam_gelir = cursor.fetchone()['sum'] or 0
-    cursor.execute('SELECT DATE(odeme_tarihi), SUM(tutar) FROM odemeler GROUP BY DATE(odeme_tarihi)')
-    gunluk_ozet = cursor.fetchall()
-    conn.close()
-    return jsonify({"toplam_gelir": toplam_gelir, "gunluk_ozet": [[g['date'], g['sum']] for g in gunluk_ozet]})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
