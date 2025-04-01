@@ -18,7 +18,7 @@
         .tab-container {
             max-width: 800px;
             margin: 0 auto;
-            background-color: white;
+            background exploring-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
@@ -104,6 +104,13 @@
         }
         .sil-button:hover {
             background-color: #c82333;
+        }
+        .duzenle-button {
+            background-color: #ffc107;
+            color: #333;
+        }
+        .duzenle-button:hover {
+            background-color: #e0a800;
         }
         select, input[type="number"], input[type="text"] {
             padding: 8px;
@@ -244,7 +251,9 @@
                 <select id="yeniUrunKategori" style="width: 150px;">
                     <option value="">Kategori Seç</option>
                 </select>
-                <button onclick="yeniUrunEkle()">Ekle</button>
+                <button id="urunEkleButon" onclick="yeniUrunEkle()">Ekle</button>
+                <button id="urunKaydetButon" onclick="urunKaydet()" style="display: none; background-color: #28a745;">Kaydet</button>
+                <input type="hidden" id="duzenlenenUrunId">
             </div>
         </div>
         <div id="adisyonTab" class="tab-content">
@@ -438,7 +447,10 @@
                             <td>${u[1]}</td>
                             <td>${u[2]}</td>
                             <td>${kategori[1]}</td>
-                            <td><button class="sil-button" onclick="urunSil(${u[0]})">Sil</button></td>
+                            <td>
+                                <button class="duzenle-button" onclick="urunDuzenle(${u[0]}, '${u[1]}', ${u[2]}, '${u[3] || ''}')">Düzenle</button>
+                                <button class="sil-button" onclick="urunSil(${u[0]})">Sil</button>
+                            </td>
                         </tr>
                     `;
                 });
@@ -727,6 +739,46 @@
             openTab('urunEkleTab');
         }
 
+        function urunDuzenle(urun_id, urun_adi, fiyat, kategori_id) {
+            document.getElementById("yeniUrunAdi").value = urun_adi;
+            document.getElementById("yeniUrunFiyat").value = fiyat;
+            document.getElementById("yeniUrunKategori").value = kategori_id || "";
+            document.getElementById("duzenlenenUrunId").value = urun_id;
+            document.getElementById("urunEkleButon").style.display = "none";
+            document.getElementById("urunKaydetButon").style.display = "inline-block";
+        }
+
+        async function urunKaydet() {
+            const urun_id = document.getElementById("duzenlenenUrunId").value;
+            const urun_adi = document.getElementById("yeniUrunAdi").value;
+            const fiyat = document.getElementById("yeniUrunFiyat").value;
+            const kategori_id = document.getElementById("yeniUrunKategori").value || null;
+            if (!urun_adi || !fiyat) return alert("Ürün adı ve fiyat giriniz!");
+
+            const response = await fetch(`/urun_duzenle/${urun_id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urun_adi, fiyat, kategori_id })
+            });
+            const result = await response.json();
+            if (result.status === "success") {
+                document.getElementById("yeniUrunAdi").value = "";
+                document.getElementById("yeniUrunFiyat").value = "";
+                document.getElementById("yeniUrunKategori").value = "";
+                document.getElementById("duzenlenenUrunId").value = "";
+                document.getElementById("urunEkleButon").style.display = "inline-block";
+                document.getElementById("urunKaydetButon").style.display = "none";
+                await urunleriYukle();
+                urunleriTabloyaYukle();
+                if (document.getElementById("siparisEkleTab").classList.contains("active")) {
+                    kategorileriGoster();
+                    if (aktifKategoriId) urunleriGoster(aktifKategoriId);
+                }
+            } else {
+                alert("Ürün güncellenirken bir hata oluştu!");
+            }
+        }
+
         async function yeniKategoriEkle() {
             const kategori_adi = document.getElementById("yeniKategoriAdi").value;
             if (!kategori_adi) return alert("Kategori adı giriniz!");
@@ -736,7 +788,7 @@
                 body: JSON.stringify({ kategori_adi })
             });
             document.getElementById("yeniKategoriAdi").value = "";
-            await kategorileriYukle(); // Dropdown’u da günceller
+            await kategorileriYukle();
             kategorileriTabloyaYukle();
             if (document.getElementById("siparisEkleTab").classList.contains("active")) {
                 kategorileriGoster();
@@ -789,7 +841,7 @@
                 });
                 const result = await response.json();
                 if (result.status === "success") {
-                    await kategorileriYukle(); // Dropdown’u da günceller
+                    await kategorileriYukle();
                     await urunleriYukle();
                     kategorileriTabloyaYukle();
                     urunleriTabloyaYukle();
