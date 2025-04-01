@@ -1,8 +1,10 @@
-from flask import Flask, render_template, request, jsonify, abort
+from flask import Flask, render_template, request, jsonify, abort, session, redirect, url_for
 import psycopg2
 import os
+import bcrypt
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'cok-gizli-bir-anahtar')  # Render'da SECRET_KEY tanımla
 
 def get_db_connection():
     db_url = os.environ.get('DATABASE_URL')
@@ -19,13 +21,50 @@ LICENSE_KEY = "KAFE123"
 def check_license():
     return True
 
+def login_required(f):
+    def wrap(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    wrap.__name__ = f.__name__
+    return wrap
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        data = request.get_json()
+        kullanici_adi = data.get('kullanici_adi')
+        sifre = data.get('sifre')
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT kullanici_id, sifre FROM kullanicilar WHERE kullanici_adi = %s', (kullanici_adi,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if user and bcrypt.checkpw(sifre.encode('utf-8'), user[1].encode('utf-8')):
+            session['user_id'] = user[0]
+            return jsonify({"status": "success", "message": "Giriş başarılı!"})
+        else:
+            return jsonify({"status": "error", "message": "Kullanıcı adı veya şifre yanlış!"}), 401
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
     if not check_license():
         abort(403, "Geçersiz lisans anahtarı!")
     return render_template('index.html')
 
 @app.route('/masalar')
+@login_required
 def masalar():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -36,6 +75,7 @@ def masalar():
     return jsonify([list(m) for m in masalar])
 
 @app.route('/urunler')
+@login_required
 def urunler():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -46,6 +86,7 @@ def urunler():
     return jsonify([list(u) for u in urunler])
 
 @app.route('/kategoriler')
+@login_required
 def kategoriler():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -56,6 +97,7 @@ def kategoriler():
     return jsonify([list(k) for k in kategoriler])
 
 @app.route('/siparis_ekle', methods=['POST'])
+@login_required
 def siparis_ekle():
     data = request.get_json()
     masa_id = data['masa_id']
@@ -72,6 +114,7 @@ def siparis_ekle():
     return jsonify({"status": "success"})
 
 @app.route('/adisyon/<int:masa_id>')
+@login_required
 def adisyon(masa_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -89,9 +132,10 @@ def adisyon(masa_id):
     return jsonify({"detay": [list(d) for d in detay], "toplam": toplam})
 
 @app.route('/odeme_kapat/<int:masa_id>', methods=['POST'])
+@login_required
 def odeme_kapat(masa_id):
     data = request.get_json()
-    odemeler = data.get('odemeler', [])  # [{siparis_id, adet}, ...]
+    odemeler = data.get('odemeler', [])
     odeme_turu = data.get('odeme_turu', 'nakit')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -101,7 +145,6 @@ def odeme_kapat(masa_id):
         siparis_id = odeme['siparis_id']
         odenen_adet = int(odeme['adet'])
         
-        # Sipariş bilgilerini al
         cur.execute('''
             SELECT s.adet, u.fiyat 
             FROM siparisler s 
@@ -113,15 +156,12 @@ def odeme_kapat(masa_id):
             conn.close()
             return jsonify({"status": "error", "message": f"Sipariş {siparis_id} için geçersiz adet"}), 400
         
-        # Ödeme tutarını hesapla
         tutar = odenen_adet * siparis[1]
         toplam += tutar
         
-        # Ödeme kaydını ekle
         cur.execute('INSERT INTO odemeler (masa_id, tutar, odeme_turu) VALUES (%s, %s, %s)',
                     (masa_id, tutar, odeme_turu))
         
-        # Sipariş adedini güncelle veya sil
         kalan_adet = siparis[0] - odenen_adet
         if kalan_adet > 0:
             cur.execute('UPDATE siparisler SET adet = %s WHERE siparis_id = %s',
@@ -129,7 +169,6 @@ def odeme_kapat(masa_id):
         else:
             cur.execute('DELETE FROM siparisler WHERE siparis_id = %s', (siparis_id,))
     
-    # Masa durumunu kontrol et ve güncelle
     cur.execute('SELECT COUNT(*) FROM siparisler WHERE masa_id = %s', (masa_id,))
     kalan_siparis = cur.fetchone()[0]
     if kalan_siparis == 0:
@@ -143,6 +182,7 @@ def odeme_kapat(masa_id):
     return jsonify({"status": "success", "toplam": toplam})
 
 @app.route('/odemeler')
+@login_required
 def odemeler():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -153,6 +193,7 @@ def odemeler():
     return jsonify([list(o) for o in odemeler])
 
 @app.route('/masa_ekle', methods=['POST'])
+@login_required
 def masa_ekle():
     data = request.get_json()
     conn = get_db_connection()
@@ -164,6 +205,7 @@ def masa_ekle():
     return jsonify({"status": "success"})
 
 @app.route('/urun_ekle', methods=['POST'])
+@login_required
 def urun_ekle():
     data = request.get_json()
     conn = get_db_connection()
@@ -176,6 +218,7 @@ def urun_ekle():
     return jsonify({"status": "success"})
 
 @app.route('/kategori_ekle', methods=['POST'])
+@login_required
 def kategori_ekle():
     data = request.get_json()
     conn = get_db_connection()
@@ -187,6 +230,7 @@ def kategori_ekle():
     return jsonify({"status": "success"})
 
 @app.route('/masa_sil/<int:masa_id>', methods=['POST'])
+@login_required
 def masa_sil(masa_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -199,6 +243,7 @@ def masa_sil(masa_id):
     return jsonify({"status": "success"})
 
 @app.route('/urun_sil/<int:urun_id>', methods=['POST'])
+@login_required
 def urun_sil(urun_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -210,6 +255,7 @@ def urun_sil(urun_id):
     return jsonify({"status": "success"})
 
 @app.route('/kategori_sil/<int:kategori_id>', methods=['POST'])
+@login_required
 def kategori_sil(kategori_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -221,6 +267,7 @@ def kategori_sil(kategori_id):
     return jsonify({"status": "success"})
 
 @app.route('/siparis_sil/<int:siparis_id>', methods=['POST'])
+@login_required
 def siparis_sil(siparis_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -237,6 +284,7 @@ def siparis_sil(siparis_id):
     return jsonify({"status": "success", "masa_id": masa_id})
 
 @app.route('/siparis_duzenle/<int:siparis_id>', methods=['POST'])
+@login_required
 def siparis_duzenle(siparis_id):
     data = request.get_json()
     conn = get_db_connection()
@@ -250,6 +298,7 @@ def siparis_duzenle(siparis_id):
     return jsonify({"masa_id": masa_id})
 
 @app.route('/gelir_raporu')
+@login_required
 def gelir_raporu():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -261,8 +310,8 @@ def gelir_raporu():
     conn.close()
     return jsonify({"gunluk_ozet": [list(g) for g in gunluk_ozet], "toplam_gelir": toplam_gelir})
 
-# Yeni eklenen endpoint: Ürün düzenleme
 @app.route('/urun_duzenle/<int:urun_id>', methods=['POST'])
+@login_required
 def urun_duzenle(urun_id):
     data = request.get_json()
     urun_adi = data.get('urun_adi')

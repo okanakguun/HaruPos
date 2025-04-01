@@ -18,7 +18,7 @@
         .tab-container {
             max-width: 800px;
             margin: 0 auto;
-            background exploring-color: white;
+            background-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
@@ -87,7 +87,7 @@
             border: none;
             border-radius: 5px;
             background-color: #007bff;
-            color: white;
+           CENTERcolor: white;
             cursor: pointer;
             transition: background-color 0.3s;
         }
@@ -194,10 +194,18 @@
         .urun-karti button {
             margin-top: 5px;
         }
+        .logout-button {
+            background-color: #dc3545;
+            float: right;
+        }
+        .logout-button:hover {
+            background-color: #c82333;
+        }
     </style>
 </head>
 <body>
     <h1>Adisyon Sistemi</h1>
+    <button class="logout-button" onclick="cikisYap()">Çıkış Yap</button>
     <div class="tab-container">
         <div class="tabs">
             <button class="tab-button active" onclick="openTab('masalarTab')">Masalar</button>
@@ -739,46 +747,6 @@
             openTab('urunEkleTab');
         }
 
-        function urunDuzenle(urun_id, urun_adi, fiyat, kategori_id) {
-            document.getElementById("yeniUrunAdi").value = urun_adi;
-            document.getElementById("yeniUrunFiyat").value = fiyat;
-            document.getElementById("yeniUrunKategori").value = kategori_id || "";
-            document.getElementById("duzenlenenUrunId").value = urun_id;
-            document.getElementById("urunEkleButon").style.display = "none";
-            document.getElementById("urunKaydetButon").style.display = "inline-block";
-        }
-
-        async function urunKaydet() {
-            const urun_id = document.getElementById("duzenlenenUrunId").value;
-            const urun_adi = document.getElementById("yeniUrunAdi").value;
-            const fiyat = document.getElementById("yeniUrunFiyat").value;
-            const kategori_id = document.getElementById("yeniUrunKategori").value || null;
-            if (!urun_adi || !fiyat) return alert("Ürün adı ve fiyat giriniz!");
-
-            const response = await fetch(`/urun_duzenle/${urun_id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ urun_adi, fiyat, kategori_id })
-            });
-            const result = await response.json();
-            if (result.status === "success") {
-                document.getElementById("yeniUrunAdi").value = "";
-                document.getElementById("yeniUrunFiyat").value = "";
-                document.getElementById("yeniUrunKategori").value = "";
-                document.getElementById("duzenlenenUrunId").value = "";
-                document.getElementById("urunEkleButon").style.display = "inline-block";
-                document.getElementById("urunKaydetButon").style.display = "none";
-                await urunleriYukle();
-                urunleriTabloyaYukle();
-                if (document.getElementById("siparisEkleTab").classList.contains("active")) {
-                    kategorileriGoster();
-                    if (aktifKategoriId) urunleriGoster(aktifKategoriId);
-                }
-            } else {
-                alert("Ürün güncellenirken bir hata oluştu!");
-            }
-        }
-
         async function yeniKategoriEkle() {
             const kategori_adi = document.getElementById("yeniKategoriAdi").value;
             if (!kategori_adi) return alert("Kategori adı giriniz!");
@@ -896,6 +864,50 @@
             });
             html += `</table>`;
             raporDiv.innerHTML = html;
+        }
+
+        function urunDuzenle(urun_id, urun_adi, fiyat, kategori_id) {
+            document.getElementById("yeniUrunAdi").value = urun_adi;
+            document.getElementById("yeniUrunFiyat").value = fiyat;
+            document.getElementById("yeniUrunKategori").value = kategori_id || "";
+            document.getElementById("duzenlenenUrunId").value = urun_id;
+            document.getElementById("urunEkleButon").style.display = "none";
+            document.getElementById("urunKaydetButon").style.display = "inline-block";
+        }
+
+        async function urunKaydet() {
+            const urun_id = document.getElementById("duzenlenenUrunId").value;
+            const urun_adi = document.getElementById("yeniUrunAdi").value;
+            const fiyat = document.getElementById("yeniUrunFiyat").value;
+            const kategori_id = document.getElementById("yeniUrunKategori").value || null;
+            if (!urun_adi || !fiyat) return alert("Ürün adı ve fiyat giriniz!");
+
+            const response = await fetch(`/urun_duzenle/${urun_id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urun_adi, fiyat, kategori_id })
+            });
+            const result = await response.json();
+            if (result.status === "success") {
+                document.getElementById("yeniUrunAdi").value = "";
+                document.getElementById("yeniUrunFiyat").value = "";
+                document.getElementById("yeniUrunKategori").value = "";
+                document.getElementById("duzenlenenUrunId").value = "";
+                document.getElementById("urunEkleButon").style.display = "inline-block";
+                document.getElementById("urunKaydetButon").style.display = "none";
+                await urunleriYukle();
+                urunleriTabloyaYukle();
+                if (document.getElementById("siparisEkleTab").classList.contains("active")) {
+                    kategorileriGoster();
+                    if (aktifKategoriId) urunleriGoster(aktifKategoriId);
+                }
+            } else {
+                alert("Ürün güncellenirken bir hata oluştu!");
+            }
+        }
+
+        function cikisYap() {
+            window.location.href = '/logout';
         }
 
         masalariYukle();
