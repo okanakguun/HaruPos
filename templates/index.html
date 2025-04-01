@@ -276,6 +276,7 @@
         let tumUrunler = [];
         let tumKategoriler = [];
         let currentMasaId = null;
+        let aktifKategoriId = null;
 
         function openTab(tabId, event) {
             const tabs = document.getElementsByClassName("tab-content");
@@ -296,8 +297,10 @@
             if (tabId === 'masaEkleTab') masalariTabloyaYukle();
             if (tabId === 'siparisEkleTab') {
                 urunleriYukle();
-                kategorileriYukle();
-                kategorileriGoster();
+                kategorileriYukle().then(() => {
+                    kategorileriGoster();
+                    if (aktifKategoriId) urunleriGoster(aktifKategoriId);
+                });
                 document.getElementById("siparisMesaji").style.display = "none";
             }
         }
@@ -384,11 +387,15 @@
                 const buton = document.createElement("button");
                 buton.className = "kategori-buton";
                 buton.textContent = k[1];
-                buton.onclick = () => urunleriGoster(k[0]);
+                buton.onclick = () => {
+                    aktifKategoriId = k[0];
+                    urunleriGoster(k[0]);
+                };
                 kategoriListesi.appendChild(buton);
             });
-            if (tumKategoriler.length > 0) {
-                urunleriGoster(tumKategoriler[0][0]);
+            if (tumKategoriler.length > 0 && !aktifKategoriId) {
+                aktifKategoriId = tumKategoriler[0][0];
+                urunleriGoster(aktifKategoriId);
                 kategoriListesi.children[0].classList.add("active");
             }
         }
@@ -706,8 +713,12 @@
             document.getElementById("yeniUrunAdi").value = "";
             document.getElementById("yeniUrunFiyat").value = "";
             document.getElementById("yeniUrunKategori").value = "";
-            urunleriYukle();
+            await urunleriYukle(); // Ürün listesini güncelle
             urunleriTabloyaYukle();
+            if (document.getElementById("siparisEkleTab").classList.contains("active")) {
+                kategorileriGoster(); // Sipariş Ekle sekmesindeysek güncelle
+                if (aktifKategoriId) urunleriGoster(aktifKategoriId);
+            }
             openTab('urunEkleTab');
         }
 
@@ -720,8 +731,12 @@
                 body: JSON.stringify({ kategori_adi })
             });
             document.getElementById("yeniKategoriAdi").value = "";
-            kategorileriYukle();
+            await kategorileriYukle(); // Kategori listesini güncelle
             kategorileriTabloyaYukle();
+            if (document.getElementById("siparisEkleTab").classList.contains("active")) {
+                kategorileriGoster(); // Sipariş Ekle sekmesindeysek güncelle
+                if (aktifKategoriId) urunleriGoster(aktifKategoriId);
+            }
             openTab('urunEkleTab');
         }
 
@@ -749,8 +764,12 @@
                 });
                 const result = await response.json();
                 if (result.status === "success") {
-                    urunleriYukle();
+                    await urunleriYukle();
                     urunleriTabloyaYukle();
+                    if (document.getElementById("siparisEkleTab").classList.contains("active")) {
+                        kategorileriGoster();
+                        if (aktifKategoriId) urunleriGoster(aktifKategoriId);
+                    }
                 } else {
                     alert("Ürün silinirken bir hata oluştu!");
                 }
@@ -765,10 +784,15 @@
                 });
                 const result = await response.json();
                 if (result.status === "success") {
-                    kategorileriYukle();
-                    urunleriYukle();
+                    await kategorileriYukle();
+                    await urunleriYukle();
                     kategorileriTabloyaYukle();
                     urunleriTabloyaYukle();
+                    if (document.getElementById("siparisEkleTab").classList.contains("active")) {
+                        kategorileriGoster();
+                        aktifKategoriId = tumKategoriler.length > 0 ? tumKategoriler[0][0] : null;
+                        if (aktifKategoriId) urunleriGoster(aktifKategoriId);
+                    }
                 } else {
                     alert("Kategori silinirken bir hata oluştu!");
                 }
